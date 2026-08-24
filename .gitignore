@@ -4,6 +4,5 @@ bazel-*
 .DS_Store
 /dist
 target
-benchmark/input
 __pycache__
 .work
