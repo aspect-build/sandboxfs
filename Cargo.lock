@@ -11,6 +11,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "cfs"
+version = "0.1.0"
+dependencies = [
+ "backend",
+]
+
+[[package]]
 name = "fskit-fs"
 version = "0.1.0"
 dependencies = [
@@ -41,6 +48,7 @@ name = "sandboxd"
 version = "0.1.0"
 dependencies = [
  "backend",
+ "cfs",
  "fskit-fs",
  "libc",
  "metrics",

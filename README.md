@@ -45,10 +45,11 @@ flowchart TD
   `Collect` (harvest declared outputs), `Destroy`.
 - **Controller → backend.** The controller dispatches through the `Backend` trait.
   `cfs` (default) projects inputs as real isolated files — no symlinks; `lazyfs`
-  (`fskit-fs`) routes to the FSKit appex. `cfs` lives in a private crate that only
-  `cfs-bin/` depends on, so building this workspace never needs access to it; the
-  shipped binary is `cfs-bin`, and a plain `cargo build` yields a controller that
-  serves `lazyfs` and reports the missing backend for `cfs`.
+  (`fskit-fs`) routes to the FSKit appex. `cfs` itself is developed in its own
+  repository: this workspace builds against the stand-in in `crates/cfs`, so an
+  ordinary `cargo build` needs no access to it and yields a controller that serves
+  `lazyfs` and reports the missing backend for `cfs`. `packaging/package.sh` points
+  the dependency at the real crate for the duration of a release build.
 - **Controller → metricsd.** On a metrics-opted-in `Negotiate`, `MetricsGate`
   brackets build windows with `begin`/`end` and periodically pushes the backend's
   cumulative `report_text` to the daemon. `metricsd` is a root LaunchDaemon that

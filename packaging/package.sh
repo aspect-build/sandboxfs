@@ -92,18 +92,31 @@ build() {
         >"$WORK/build-app.log" 2>&1 || { tail -40 "$WORK/build-app.log"; die "app archive failed"; }
 
     say "building sandboxfs CLI (universal) via cargo…"
-    # The Rust controller, built from cfs-bin: that manifest is the one that links the
-    # projection backend (and the only one that reaches the private repo it lives in).
-    # It is its own workspace, so --target-dir keeps its output beside everything else.
+    # The Rust controller (crates/sandboxd, bin `sandboxfs`). The projection backend is
+    # developed in its own repository, and the workspace builds against the in-tree stand-in
+    # (crates/cfs) so an ordinary build needs no access to it — a cargo feature could not do
+    # that, since the resolver reads every dependency's manifest whether a feature enables it
+    # or not. A shipped binary must carry the real one, so swap the dependency over for the
+    # duration of the build and put it back however this exits. Restoring from a copy, not
+    # from git, so an unrelated local edit is never discarded.
+    CFS_MANIFEST="$ROOT/crates/sandboxd/Cargo.toml"
+    cp "$CFS_MANIFEST" "$WORK/sandboxd-Cargo.toml.orig"
+    cp "$ROOT/Cargo.lock" "$WORK/Cargo.lock.orig"
+    restore_cfs_dep() {
+        cp "$WORK/sandboxd-Cargo.toml.orig" "$CFS_MANIFEST"
+        cp "$WORK/Cargo.lock.orig" "$ROOT/Cargo.lock"
+    }
+    trap restore_cfs_dep EXIT
+    sed -i '' 's|^cfs = { path = "../cfs" }$|cfs = { git = "ssh://git@github.com/aspect-build/cfs.git", branch = "main" }|' "$CFS_MANIFEST"
+    grep -q '^cfs = { git = ' "$CFS_MANIFEST" || die "could not point the cfs dependency at its git source"
+
     # cargo can't emit a fat binary directly, so build both slices and lipo them — the
-    # app+appex archive is already x86_64+arm64, and a host-arch-only CLI would leave
-    # the other arch without a working `sandboxfs`.
+    # app+appex archive is already x86_64+arm64, and a host-arch-only CLI would leave the
+    # other arch without a working `sandboxfs`.
     rustup target add x86_64-apple-darwin aarch64-apple-darwin >/dev/null 2>&1 || true
-    cargo build --release --manifest-path "$ROOT/cfs-bin/Cargo.toml" \
-        --target-dir "$ROOT/target" --target x86_64-apple-darwin \
+    cargo build --release -p sandboxd --target x86_64-apple-darwin \
         >"$WORK/build-cli.log" 2>&1 || { tail -40 "$WORK/build-cli.log"; die "cli build (x86_64) failed"; }
-    cargo build --release --manifest-path "$ROOT/cfs-bin/Cargo.toml" \
-        --target-dir "$ROOT/target" --target aarch64-apple-darwin \
+    cargo build --release -p sandboxd --target aarch64-apple-darwin \
         >>"$WORK/build-cli.log" 2>&1 || { tail -40 "$WORK/build-cli.log"; die "cli build (arm64) failed"; }
     lipo -create -output "$WORK/sandboxfs" \
         "$ROOT/target/x86_64-apple-darwin/release/sandboxfs" \
