@@ -1,13 +1,11 @@
 [workspace]
 members = ["crates/*"]
+# cfs-bin links the private projection backend; keeping it out of the workspace is what keeps an
+# ordinary build here from resolving (and fetching) that dependency. See cfs-bin/Cargo.toml.
+exclude = ["cfs-bin"]
 resolver = "2"
 
 [profile.release]
 opt-level = 3
 lto = true
 strip = "symbols"   # hand no function names to a reverser; highest-value, lowest-effort
-
-# `cfs` pulls `backend` from this repo over git. Without this patch cargo would build a
-# second copy of it, and the two `dyn Backend` types would not unify.
-[patch."ssh://git@github.com/aspect-build/sandboxfs.git"]
-backend = { path = "crates/backend" }

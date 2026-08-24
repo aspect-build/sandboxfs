@@ -92,14 +92,18 @@ build() {
         >"$WORK/build-app.log" 2>&1 || { tail -40 "$WORK/build-app.log"; die "app archive failed"; }
 
     say "building sandboxfs CLI (universal) via cargo…"
-    # The Rust controller (crates/sandboxd, bin `sandboxfs`). cargo can't emit a
-    # fat binary directly, so build both slices and lipo them — the app+appex
-    # archive is already x86_64+arm64, and a host-arch-only CLI would leave the
-    # other arch without a working `sandboxfs`.
+    # The Rust controller, built from cfs-bin: that manifest is the one that links the
+    # projection backend (and the only one that reaches the private repo it lives in).
+    # It is its own workspace, so --target-dir keeps its output beside everything else.
+    # cargo can't emit a fat binary directly, so build both slices and lipo them — the
+    # app+appex archive is already x86_64+arm64, and a host-arch-only CLI would leave
+    # the other arch without a working `sandboxfs`.
     rustup target add x86_64-apple-darwin aarch64-apple-darwin >/dev/null 2>&1 || true
-    cargo build --release -p sandboxd --features cfs --target x86_64-apple-darwin \
+    cargo build --release --manifest-path "$ROOT/cfs-bin/Cargo.toml" \
+        --target-dir "$ROOT/target" --target x86_64-apple-darwin \
         >"$WORK/build-cli.log" 2>&1 || { tail -40 "$WORK/build-cli.log"; die "cli build (x86_64) failed"; }
-    cargo build --release -p sandboxd --features cfs --target aarch64-apple-darwin \
+    cargo build --release --manifest-path "$ROOT/cfs-bin/Cargo.toml" \
+        --target-dir "$ROOT/target" --target aarch64-apple-darwin \
         >>"$WORK/build-cli.log" 2>&1 || { tail -40 "$WORK/build-cli.log"; die "cli build (arm64) failed"; }
     lipo -create -output "$WORK/sandboxfs" \
         "$ROOT/target/x86_64-apple-darwin/release/sandboxfs" \

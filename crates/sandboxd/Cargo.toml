@@ -3,16 +3,16 @@ name = "sandboxd"
 version = "0.1.0"
 edition = "2021"
 
+[lib]
+name = "sandboxd"
+path = "src/lib.rs"
+
 [[bin]]
 name = "sandboxfs"
 path = "src/main.rs"
 
-[features]
-cfs = ["dep:cfs"]
-
 [dependencies]
 backend = { path = "../backend" }
-cfs = { git = "ssh://git@github.com/aspect-build/cfs.git", branch = "main", optional = true }
 fskit-fs = { path = "../fskit-fs" }
 metrics = { path = "../metrics" }
 libc = "0.2"
