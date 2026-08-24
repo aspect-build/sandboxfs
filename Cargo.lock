@@ -13,7 +13,7 @@ dependencies = [
 [[package]]
 name = "cfs"
 version = "0.1.0"
-source = "git+ssh://git@github.com/aspect-build/cfs.git?branch=main#fa257b6b773e8533fd02d442388570d31710c0c5"
+source = "git+ssh://git@github.com/aspect-build/cfs.git?branch=main#6abbe297392e34ca02ad61dc5deb7465a920c1c3"
 dependencies = [
  "backend",
  "libc",
