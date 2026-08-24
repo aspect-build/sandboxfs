@@ -1,0 +1,332 @@
+name: publish-to-r2
+
+# Publishes two things to the Cloudflare R2 bucket `sandboxfs`:
+#
+#   1. mirror       — every published GitHub release, mirrored to
+#                     s3://<bucket>/releases/<tag>/<asset>
+#   2. check-bazel  — cheaply detects whether thesayyn/bazel@<ref> has a newer
+#                     HEAD than what's published, and gates:
+#      build-bazel  — builds that Bazel fork (bazelbuild/bazel#29886, the
+#                     `--sandbox_backend` strategy sandboxfs needs) and publishes
+#                     a bazelisk-compatible binary to
+#                     s3://<bucket>/bazel/<version>/bazel-<version>-darwin-arm64
+#                     plus a config README.md at the bucket root.
+#
+# bazelisk with BAZELISK_BASE_URL fetches <base>/<version>/bazel-<version>-<os>-<arch>,
+# so the public base points one level above the binary: <R2_PUBLIC_BASE_URL>/bazel.
+# <version> = <fork .bazelversion>-sandboxfs (e.g. 9.2.0-sandboxfs), a rolling
+# channel; the daily schedule keeps it at the branch HEAD. sandboxfs is Apple
+# Silicon only (macOS 26.4+), so only darwin-arm64 is built; Bazel needs no beta
+# SDK, so unlike the .pkg it builds on hosted CI.
+#
+# Required repository secrets:
+#   R2_ENDPOINT, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY
+#   R2_PUBLIC_BASE_URL   public bucket base, e.g. https://pub-<hash>.r2.dev (no
+#                        trailing slash)
+on:
+  release:
+    types: [published]
+  schedule:
+    - cron: "17 6 * * *"
+  workflow_dispatch:
+    inputs:
+      mirror_tag:
+        description: "Release tag to (re)mirror to R2 (blank = skip mirror)"
+        required: false
+      build_bazel:
+        description: "Build & publish the Bazel fork"
+        type: boolean
+        default: false
+      bazel_ref:
+        description: "thesayyn/bazel ref to build"
+        default: sandboxfs
+
+permissions:
+  contents: read
+
+env:
+  R2_BUCKET: sandboxfs
+
+jobs:
+  mirror:
+    if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.mirror_tag != '')
+    runs-on: ubuntu-latest
+    concurrency:
+      group: mirror-r2-${{ github.event.release.tag_name || inputs.mirror_tag }}
+      cancel-in-progress: false
+    env:
+      TAG: ${{ github.event.release.tag_name || inputs.mirror_tag }}
+    steps:
+      - name: Download release assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          mkdir -p assets
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --dir assets
+          ls -la assets
+
+      - name: Upload to R2
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          # R2 rejects the integrity checksum headers aws-cli v2 sends by default;
+          # only send them when the operation actually requires one.
+          AWS_REQUEST_CHECKSUM_CALCULATION: when_required
+          AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
+          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+        run: |
+          set -euo pipefail
+          aws s3 sync assets "s3://$R2_BUCKET/releases/$TAG/" \
+            --endpoint-url "$R2_ENDPOINT" \
+            --no-progress
+
+  check-bazel:
+    if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.build_bazel)
+    runs-on: ubuntu-latest
+    outputs:
+      should_build: ${{ steps.decide.outputs.should_build }}
+      sha: ${{ steps.decide.outputs.sha }}
+      version: ${{ steps.decide.outputs.version }}
+    steps:
+      - name: Decide whether the fork needs building
+        id: decide
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PUBLIC_BASE: ${{ secrets.R2_PUBLIC_BASE_URL }}
+          REF: ${{ inputs.bazel_ref || 'sandboxfs' }}
+          # A manual dispatch that asked to build always builds; the schedule only
+          # builds when the branch HEAD moved past what's published.
+          FORCE: ${{ github.event_name == 'workflow_dispatch' }}
+        run: |
+          set -euo pipefail
+          sha="$(gh api "repos/thesayyn/bazel/commits/$REF" --jq '.sha')"
+          base="$(gh api "repos/thesayyn/bazel/contents/.bazelversion?ref=$REF" \
+            -H 'Accept: application/vnd.github.raw' | tr -d '[:space:]')"
+          version="${base}-sandboxfs"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if [ "$FORCE" = "true" ]; then
+            echo "forced build via workflow_dispatch"
+            echo "should_build=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          base_url="${PUBLIC_BASE%/}"
+          case "$base_url" in http://*|https://*) ;; *) base_url="https://$base_url" ;; esac
+          published="$(curl -fsSL "$base_url/bazel/$version/COMMIT" 2>/dev/null || true)"
+          if [ "$published" = "$sha" ]; then
+            echo "published $version is already at $sha; skipping"
+            echo "should_build=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "branch HEAD $sha != published '${published:-none}'; building"
+            echo "should_build=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  build-bazel:
+    needs: check-bazel
+    if: needs.check-bazel.outputs.should_build == 'true'
+    runs-on: macos-15
+    timeout-minutes: 120
+    concurrency:
+      group: publish-bazel-fork
+      cancel-in-progress: false
+    steps:
+      - name: Checkout thesayyn/bazel
+        uses: actions/checkout@v4
+        with:
+          repository: thesayyn/bazel
+          ref: ${{ needs.check-bazel.outputs.sha }}
+          fetch-depth: 1
+
+      - name: Setup Bazel with caching
+        uses: bazel-contrib/setup-bazel@0.19.0
+        with:
+          bazelisk-cache: true
+          disk-cache: true
+          repository-cache: true
+
+      - name: Build //src:bazel
+        run: |
+          set -euo pipefail
+          bazel build //src:bazel
+          test -f bazel-bin/src/bazel
+
+      - name: Stage bazelisk-named binary
+        id: stage
+        run: |
+          set -euo pipefail
+          version="$(cat .bazelversion)-sandboxfs"
+          asset="bazel-${version}-darwin-arm64"
+          sha="$(git rev-parse HEAD)"
+          mkdir -p "$RUNNER_TEMP/out"
+          cp bazel-bin/src/bazel "$RUNNER_TEMP/out/$asset"
+          printf '%s' "$sha" > "$RUNNER_TEMP/out/COMMIT"
+          sum="$(shasum -a 256 "$RUNNER_TEMP/out/$asset" | cut -d' ' -f1)"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "asset=$asset" >> "$GITHUB_OUTPUT"
+          echo "sha256=$sum" >> "$GITHUB_OUTPUT"
+
+      - name: Render bucket-root index.html
+        env:
+          PUBLIC_BASE: ${{ secrets.R2_PUBLIC_BASE_URL }}
+          VERSION: ${{ steps.stage.outputs.version }}
+          SHA256: ${{ steps.stage.outputs.sha256 }}
+        run: |
+          set -euo pipefail
+          if [ -z "${PUBLIC_BASE:-}" ]; then
+            echo "::error::secret R2_PUBLIC_BASE_URL is not set" >&2
+            exit 1
+          fi
+          # Normalize: strip a trailing slash and ensure a scheme. A scheme-less
+          # host resolves as a relative URL in the browser (doubling the host) and
+          # bazelisk/curl reject it outright.
+          PUBLIC_BASE="${PUBLIC_BASE%/}"
+          case "$PUBLIC_BASE" in http://*|https://*) ;; *) PUBLIC_BASE="https://$PUBLIC_BASE" ;; esac
+          cat > "$RUNNER_TEMP/index.html" <<EOF
+          <!doctype html>
+          <html lang="en">
+          <head>
+          <meta charset="utf-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1">
+          <title>sandboxfs — compatible Bazel</title>
+          <style>
+          :root {
+            --bg:#ffffff; --ink:#1a1a1f; --muted:#5b5b66; --faint:#8a8a94; --line:#e6e6ea;
+            --accent:#3538cd; --code-bg:#f6f6f8; --card:#fdfdfd;
+            --serif:ui-serif,"New York","Iowan Old Style",Palatino,"Palatino Linotype",Georgia,serif;
+            --mono:ui-monospace,"SF Mono","SFMono-Regular",Menlo,monospace;
+          }
+          @media (prefers-color-scheme:dark) {
+            :root {
+              --bg:#101014; --ink:#e9e9ee; --muted:#9494a0; --faint:#68686f; --line:#262630;
+              --accent:#9aa0ff; --code-bg:#17171c; --card:#16161b;
+            }
+          }
+          * { box-sizing:border-box; }
+          html { -webkit-text-size-adjust:100%; }
+          body { margin:0; background:var(--bg); color:var(--ink);
+            font:17px/1.65 var(--serif); -webkit-font-smoothing:antialiased; }
+          main { max-width:660px; margin:0 auto; padding:72px 24px 96px; }
+          a { color:var(--accent); text-decoration:underline;
+            text-underline-offset:2px; text-decoration-thickness:1px; }
+          a:hover { text-decoration-thickness:2px; }
+          h1 { font:600 31px/1.2 var(--serif); letter-spacing:-.01em; margin:0 0 10px; }
+          .sub { color:var(--muted); font-style:italic; margin:0 0 6px; }
+          .avail { color:var(--muted); font-size:15.5px; margin:0; }
+          section { margin-top:44px; padding-top:30px; border-top:1px solid var(--line); }
+          h2 { font:600 21px/1.3 var(--serif); margin:0 0 14px; }
+          p { margin:0 0 18px; }
+          .note { color:var(--muted); font-size:15.5px; margin:16px 0 0; }
+          code { font-family:var(--mono); }
+          p code, .note code, h2 code { font-size:.82em; background:var(--code-bg);
+            border:1px solid var(--line); padding:1px 5px; border-radius:4px; color:var(--ink); }
+          .file { border:1px solid var(--line); border-radius:10px; background:var(--card);
+            overflow:hidden; }
+          .file-head { display:flex; align-items:center; justify-content:space-between; gap:12px;
+            padding:9px 12px 9px 14px; border-bottom:1px solid var(--line); }
+          .file-name { font:12.5px/1 var(--mono); color:var(--muted); }
+          .copy { border:1px solid var(--line); background:transparent; color:var(--muted);
+            font:500 10.5px/1 var(--mono); letter-spacing:.06em; text-transform:uppercase;
+            padding:6px 10px; border-radius:6px; cursor:pointer;
+            transition:color .15s, border-color .15s; }
+          .copy:hover { color:var(--accent); border-color:var(--accent); }
+          .copy:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+          .file pre { margin:0; padding:14px 16px; overflow-x:auto; }
+          .file code { font:13px/1.7 var(--mono); color:var(--ink); white-space:pre; }
+          .dl { display:inline-block; border:1px solid var(--accent); color:var(--accent);
+            font:13.5px/1 var(--mono); padding:10px 15px; border-radius:8px; text-decoration:none; }
+          .dl:hover { background:var(--accent); color:#fff; text-decoration:none; }
+          .dl:focus-visible { outline:2px solid var(--accent); outline-offset:3px; }
+          .alt { margin-left:14px; font:13px/1 var(--mono); }
+          footer { margin-top:48px; padding-top:26px; border-top:1px solid var(--line);
+            color:var(--faint); font:14px/1.8 var(--serif); }
+          footer code { font-size:12.5px; color:var(--muted); word-break:break-all; }
+          @media (max-width:560px) { main { padding:48px 20px 72px; } section { margin-top:36px; } }
+          </style>
+          </head>
+          <body>
+          <main>
+          <h1>sandboxfs — compatible Bazel</h1>
+          <p class="sub">A prebuilt Bazel with the <code>--sandbox_backend</code> spawn strategy from
+          <a href="https://github.com/bazelbuild/bazel/pull/29886">bazelbuild/bazel#29886</a> — the
+          hook sandboxfs plugs into.</p>
+          <p class="avail">Prebuilt binaries are available for arm64 darwin (Apple Silicon) only.</p>
+
+          <section>
+          <h2>Get the compatible Bazel</h2>
+          <p>Add a <code>.bazeliskrc</code> next to your <code>MODULE.bazel</code>:</p>
+          <div class="file">
+          <div class="file-head"><span class="file-name">.bazeliskrc</span><button class="copy">Copy</button></div>
+          <pre><code>BAZELISK_BASE_URL=${PUBLIC_BASE}/bazel
+          USE_BAZEL_VERSION=${VERSION}</code></pre>
+          </div>
+          <p class="note">bazelisk downloads <code>bazel-${VERSION}-darwin-arm64</code> on the next run.
+          Force a refresh after a rebuild with <code>rm -rf ~/.cache/bazelisk/downloads</code>, or pin
+          the checksum with <code>BAZELISK_VERIFY_SHA256</code> (see footer).</p>
+          </section>
+
+          <section>
+          <h2>Install sandboxfs</h2>
+          <p>The sandboxfs repository is private; signed builds are mirrored here.</p>
+          <p><a class="dl" href="${PUBLIC_BASE}/releases/v0.0.0/sandboxfs-0.0.0-arm64.dmg" download>Download sandboxfs-0.0.0-arm64.dmg</a><a class="alt" href="${PUBLIC_BASE}/releases/v0.0.0/sandboxfs-0.0.0-arm64.pkg">.pkg</a></p>
+          <p class="note">Open the .dmg and run the .pkg inside — installs <code>/usr/local/bin/sandboxfs</code>
+          and the metrics daemon. No activation needed.</p>
+          </section>
+
+          <section>
+          <h2>Turn it on</h2>
+          <p>Point Bazel at the sandbox in <code>.bazelrc</code>:</p>
+          <div class="file">
+          <div class="file-head"><span class="file-name">.bazelrc</span><button class="copy">Copy</button></div>
+          <pre><code>common --enable_platform_specific_config
+          common:macos --sandbox_backend=aspect-sandbox=sandboxfs
+          common:macos --spawn_strategy=aspect-sandbox,local
+          # common:macos --sandbox_backend_opt=sandboxfs=--metrics</code></pre>
+          </div>
+          <p class="note">Uncomment the last line to record build metrics for sandbox.app.</p>
+          </section>
+
+          <footer>
+          build <code>${VERSION}</code> · sha256 <code>${SHA256}</code><br>
+          from <a href="https://github.com/thesayyn/bazel/tree/sandboxfs">thesayyn/bazel@sandboxfs</a>
+          </footer>
+          </main>
+          <script>
+          document.querySelectorAll(".copy").forEach(function (b) {
+            b.addEventListener("click", function () {
+              var code = b.closest(".file").querySelector("code").innerText;
+              navigator.clipboard.writeText(code);
+              var prev = b.innerText;
+              b.innerText = "Copied";
+              setTimeout(function () { b.innerText = prev; }, 1200);
+            });
+          });
+          </script>
+          </body>
+          </html>
+          EOF
+
+      - name: Upload to R2
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          AWS_REQUEST_CHECKSUM_CALCULATION: when_required
+          AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
+          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+          VERSION: ${{ steps.stage.outputs.version }}
+          ASSET: ${{ steps.stage.outputs.asset }}
+        run: |
+          set -euo pipefail
+          dest="s3://$R2_BUCKET/bazel/$VERSION"
+          aws s3 cp "$RUNNER_TEMP/out/$ASSET" "$dest/$ASSET" \
+            --endpoint-url "$R2_ENDPOINT" --no-progress
+          # COMMIT is written last: it is the published marker the schedule reads
+          # to decide whether a rebuild is needed, so it must trail the binary.
+          aws s3 cp "$RUNNER_TEMP/out/COMMIT" "$dest/COMMIT" \
+            --endpoint-url "$R2_ENDPOINT" --no-progress \
+            --content-type "text/plain; charset=utf-8"
+          aws s3 cp "$RUNNER_TEMP/index.html" "s3://$R2_BUCKET/index.html" \
+            --endpoint-url "$R2_ENDPOINT" --no-progress \
+            --content-type "text/html; charset=utf-8"

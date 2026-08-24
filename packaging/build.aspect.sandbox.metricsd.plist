@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- System LaunchDaemon for the build-metrics daemon. Runs as root (no UserName) so
+     it can own the kdebug facility; launchd vends the Mach service and starts the
+     daemon on demand. Install: copy to /Library/LaunchDaemons/, then
+     `sudo launchctl bootstrap system /Library/LaunchDaemons/build.aspect.sandbox.metricsd.plist`. -->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>build.aspect.sandbox.metricsd</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/local/bin/sandboxfs</string>
+        <string>metricsd</string>
+    </array>
+    <key>MachServices</key>
+    <dict>
+        <key>build.aspect.sandbox.metricsd</key>
+        <true/>
+    </dict>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>ProcessType</key>
+    <string>Adaptive</string>
+    <key>StandardErrorPath</key>
+    <string>/var/log/sandboxfs-metrics.log</string>
+</dict>
+</plist>

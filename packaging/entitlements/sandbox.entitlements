@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- Host app: sandboxed (matches the Xcode `sandbox` target's
+         ENABLE_APP_SANDBOX=YES + user-selected read-only). The app's only job is
+         to be the registration vehicle for the embedded FSKit appex, so it stays
+         minimal. The FSKit module entitlement lives on the appex, not here. -->
+    <key>com.apple.security.app-sandbox</key>
+    <true/>
+    <key>com.apple.security.files.user-selected.read-only</key>
+    <true/>
+    <!-- Lets the dashboard look up the launchd metricsd to tail the metrics feed + control
+         windows over XPC (feed / begin / end / report). -->
+    <key>com.apple.security.temporary-exception.mach-lookup.global-name</key>
+    <array>
+        <string>build.aspect.sandbox.metricsd</string>
+    </array>
+</dict>
+</plist>

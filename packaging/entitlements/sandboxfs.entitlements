@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- sandboxfs CLI: NOT sandboxed (it manages mounts, spawns sudo/killall,
+         speaks framed proto on stdio). Signed with the hardened runtime for
+         notarization. It carries no capability entitlements today; this file
+         exists so the distribution sign is explicit and so we have one place to
+         add exceptions (e.g. disable-library-validation) if a future need arises. -->
+</dict>
+</plist>

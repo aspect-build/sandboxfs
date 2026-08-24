@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<installer-gui-script minSpecVersion="2">
+    <title>sandboxfs</title>
+    <welcome    file="welcome.html"    mime-type="text/html"/>
+    <conclusion file="conclusion.html" mime-type="text/html"/>
+
+    <options customize="never" require-scripts="true" hostArchitectures="arm64,x86_64"/>
+
+    <choices-outline>
+        <line choice="default">
+            <line choice="build.aspect.sandbox.pkg"/>
+        </line>
+    </choices-outline>
+    <choice id="default"/>
+    <choice id="build.aspect.sandbox.pkg" visible="false">
+        <pkg-ref id="build.aspect.sandbox.pkg"/>
+    </choice>
+
+    <pkg-ref id="build.aspect.sandbox.pkg">sandbox-component.pkg</pkg-ref>
+</installer-gui-script>

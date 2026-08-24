@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<style>
+  :root { --blue:#176ACC; --ink:#1f2e35; --dim:#6e7c83; }
+  body { font:13px/1.5 -apple-system,system-ui,sans-serif; color:var(--ink); margin:0; padding:8px 2px; }
+  .brand { font:14px/1.25 ui-monospace,SFMono-Regular,Menlo,monospace; white-space:pre; margin:2px 0 14px; }
+  .brand .mk  { color:var(--blue); font-weight:700; }
+  .brand .nm  { font-weight:700; }
+  .brand .org { color:var(--dim); font-size:11px; }
+  h2 { font-size:14px; margin:0 0 6px; }
+  h3 { font-size:13px; margin:28px 0 3px; }
+  h3 .num { color:var(--blue); font-weight:700; }
+  p { margin:3px 0; color:var(--ink); }
+  code { background:#eef1f3; padding:1px 5px; border-radius:4px; font-size:12px; color:var(--ink); }
+  pre.cmd { background:#eef1f3; color:var(--ink); padding:9px 11px; border-radius:6px;
+        font-size:11.5px; line-height:1.45; overflow:auto; margin:7px 0; }
+  b { color:var(--ink); }
+  @media (prefers-color-scheme: dark) {
+    :root { --ink:#eef1f3; --dim:#9fb0b8; }
+    code { background:#243138; } pre.cmd { background:#243138; }
+  }
+</style></head><body>
+<div class="brand"><span class="mk">◰◳</span>  <span class="nm">sandboxfs</span>
+<span class="mk">◱◲</span>  <span class="org">Aspect Build Inc.</span></div>
+
+  <h2>Installed. One step left — wire it into Bazel:</h2>
+
+  <h3><span class="num">1.</span> Wire it into Bazel</h3>
+  <p>Add to your <code>.bazelrc</code> to route macOS spawns through sandboxfs:</p>
+  <pre class="cmd">common --enable_platform_specific_config
+common:macos --sandbox_backend=aspect-sandbox=sandboxfs
+common:macos --spawn_strategy=aspect-sandbox,local
+# Enable metrics if you'd like to
+# common:macos --sandbox_backend_opt=sandboxfs=--metrics</pre>
+  <p>The <b>metricsd</b> daemon is installed and loaded for you — uncomment the last
+  line to record build metrics, then watch them in <b>sandbox.app</b>.</p>
+</body></html>

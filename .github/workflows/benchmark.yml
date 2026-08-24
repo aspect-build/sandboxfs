@@ -1,0 +1,136 @@
+name: benchmark
+
+# Cold-build showdown: darwin-sandbox vs sandboxfs, same fork Bazel, same
+# workload, macos-15-xlarge. Two matrix jobs (one per spawn strategy) each take N
+# independent cold samples on fresh runners; the summary job reports the
+# median Elapsed time and the sandboxfs delta.
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  darwin-sandbox:
+    runs-on: macos-15-xlarge
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        run: [1]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/bench
+        with:
+          sandbox: darwin-sandbox
+          target: //src:bazel
+          workload-repo: bazelbuild/bazel
+          workload-ref: master
+          bazel-version: 9.2.0-sandboxfs
+          public-base: ${{ secrets.R2_PUBLIC_BASE_URL }}
+          run-index: ${{ matrix.run }}
+
+  sandboxfs:
+    runs-on: macos-15-xlarge
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        run: [1]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/bench
+        with:
+          sandbox: sandboxfs
+          target: //src:bazel
+          workload-repo: bazelbuild/bazel
+          workload-ref: master
+          bazel-version: 9.2.0-sandboxfs
+          public-base: ${{ secrets.R2_PUBLIC_BASE_URL }}
+          run-index: ${{ matrix.run }}
+
+  summary:
+    needs: [darwin-sandbox, sandboxfs]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Collect samples
+        # A whole arm can fail and upload nothing; don't let a missing pattern
+        # abort the summary.
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          pattern: bench-*
+          path: samples
+
+      - name: Report
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import glob, json, statistics as st, collections
+
+          KINDS = ("darwin-sandbox", "sandboxfs")
+          samples = collections.defaultdict(list)
+          for f in glob.glob("samples/**/result.json", recursive=True):
+              try:
+                  d = json.load(open(f))
+              except Exception:
+                  continue
+              samples[d["sandbox"]].append(d)
+
+          def med(xs): return st.median(xs) if xs else None
+
+          def mean_by_key(rows, field):
+              acc = collections.defaultdict(list)
+              for r in rows:
+                  for k, v in r.get(field, {}).items():
+                      acc[k].append(float(v))
+              return {k: sum(v) / len(v) for k, v in acc.items()}
+
+          elapsed = {k: sorted(float(r["elapsed_s"]) for r in samples.get(k, [])) for k in KINDS}
+          meds = {k: med(elapsed[k]) for k in KINDS}
+
+          print("## benchmark: darwin-sandbox vs sandboxfs\n")
+          print("| sandbox | samples | median (s) | min | max |")
+          print("|---|---|---|---|---|")
+          for k in KINDS:
+              xs = elapsed[k]
+              if xs:
+                  print(f"| {k} | {len(xs)} | {meds[k]:.3f} | {xs[0]:.3f} | {xs[-1]:.3f} |")
+              else:
+                  print(f"| {k} | 0 | — | — | — |")
+
+          both = all(samples.get(k) for k in KINDS)
+          if not both:
+              missing = [k for k in KINDS if not samples.get(k)]
+              print(f"\n> No finished job for: {', '.join(missing)} — "
+                    "need at least one sample from each arm to compare.")
+              raise SystemExit(0)
+
+          d, s = meds["darwin-sandbox"], meds["sandboxfs"]
+          delta = (s - d) / d * 100
+          verb = "faster" if delta < 0 else "slower"
+          print(f"\n**sandboxfs is {abs(delta):.1f}% {verb} than darwin-sandbox** "
+                f"(median {s:.3f}s vs {d:.3f}s).")
+
+          def compare(title, field, top=None):
+              a = mean_by_key(samples.get("darwin-sandbox", []), field)
+              b = mean_by_key(samples.get("sandboxfs", []), field)
+              keys = list(a) + [k for k in b if k not in a]
+              if top:
+                  keys = sorted(keys, key=lambda k: max(a.get(k, 0), b.get(k, 0)), reverse=True)[:top]
+              if not keys:
+                  return
+              print(f"\n### {title} (mean s across samples)\n")
+              print("| key | darwin-sandbox | sandboxfs | Δ |")
+              print("|---|--:|--:|--:|")
+              for k in keys:
+                  av, bv = a.get(k, 0.0), b.get(k, 0.0)
+                  print(f"| {k} | {av:.3f} | {bv:.3f} | {bv - av:+.3f} |")
+
+          compare("Phase wall time", "phases")
+          compare("Top categories (thread-time)", "categories", top=12)
+          PY
+          cat "$GITHUB_STEP_SUMMARY"

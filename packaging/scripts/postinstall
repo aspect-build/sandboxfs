@@ -1,0 +1,67 @@
+#!/bin/bash
+# pkg postinstall — runs as root after sandbox.app lands in /Applications.
+#
+# Two jobs, both of which must happen in the *console user's* context, not
+# root's: (1) register the app so LaunchServices/pluginkit discover the embedded
+# FSKit appex, and (2) expose the embedded CLI on PATH as `sandboxfs`.
+#
+# What this script deliberately does NOT do:
+#   * enable the FSKit module — that needs the per-user settings store to exist
+#     first (created by launching the app or opening System Settings once) and a
+#     root `killall fskitd`. It stays a first-run step: `sandboxfs enable`.
+#   * grant Full Disk Access — a manual System Settings action for the appex when
+#     workspaces live under TCC-protected dirs (~/Documents, ~/Desktop, ...).
+# See the conclusion screen / README for the first-run steps.
+
+set -u
+
+APP="/Applications/sandbox.app"
+CLI="$APP/Contents/MacOS/sandboxfs"
+LINK_DIR="/usr/local/bin"
+LINK="$LINK_DIR/sandboxfs"
+LSREGISTER="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
+
+log() { /usr/bin/logger -t sandboxfs-postinstall "$*"; echo "sandboxfs-postinstall: $*"; }
+
+# The user actually logged in at the GUI — pkg scripts run as root, so we hop
+# into their session for anything LaunchServices-scoped.
+CONSOLE_USER="$(/usr/bin/stat -f%Su /dev/console 2>/dev/null)"
+CONSOLE_UID="$(/usr/bin/id -u "$CONSOLE_USER" 2>/dev/null)"
+
+# 1) Symlink the CLI onto PATH (root-owned, fine).
+/bin/mkdir -p "$LINK_DIR"
+/bin/ln -sf "$CLI" "$LINK"
+log "linked $LINK -> $CLI"
+
+# 2) Register the app for the console user so pluginkit can see the appex.
+#    Best-effort: the reliable trigger is the user launching the app once, which
+#    the conclusion screen tells them to do. This just gets a head start.
+if [ -n "${CONSOLE_USER:-}" ] && [ "$CONSOLE_USER" != "root" ] && [ -n "${CONSOLE_UID:-}" ]; then
+    /bin/launchctl asuser "$CONSOLE_UID" /usr/bin/sudo -u "$CONSOLE_USER" \
+        "$LSREGISTER" -f "$APP" 2>/dev/null \
+        && log "registered $APP for $CONSOLE_USER" \
+        || log "lsregister best-effort failed (user can launch the app to register)"
+else
+    log "no console user; skipping registration (will register on first app launch)"
+fi
+
+# 3) Install and load the metricsd LaunchDaemon (runs `sandboxfs metricsd` as
+#    root; owns the kdebug facility, vends the build.aspect.sandbox.metricsd Mach
+#    service). Opt in per build with --sandbox_backend_opt=sandboxfs=--metrics.
+PLIST_SRC="$APP/Contents/Resources/build.aspect.sandbox.metricsd.plist"
+PLIST_DST="/Library/LaunchDaemons/build.aspect.sandbox.metricsd.plist"
+if [ -f "$PLIST_SRC" ]; then
+    /bin/cp "$PLIST_SRC" "$PLIST_DST"
+    /usr/sbin/chown root:wheel "$PLIST_DST"
+    /bin/chmod 644 "$PLIST_DST"
+    /bin/launchctl bootout system "$PLIST_DST" 2>/dev/null || true
+    if /bin/launchctl bootstrap system "$PLIST_DST" 2>/dev/null; then
+        log "installed + bootstrapped metricsd ($PLIST_DST)"
+    else
+        log "installed metricsd; load it with: sudo launchctl bootstrap system $PLIST_DST"
+    fi
+else
+    log "metricsd plist not bundled; skipping"
+fi
+
+exit 0
