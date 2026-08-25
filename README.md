@@ -53,8 +53,14 @@ flowchart TD
 - **Controller → metricsd.** On a metrics-opted-in `Negotiate`, `MetricsGate`
   brackets build windows with `begin`/`end` and periodically pushes the backend's
   cumulative `report_text` to the daemon. `metricsd` is a root LaunchDaemon that
-  owns kdebug (syscall tracing scoped to the clone backend's path prefix) only
-  while a window is open, and is otherwise inert.
+  owns kdebug (syscall tracing scoped to the backend's path prefix) only while a
+  window is open, and is otherwise inert.
 - **metricsd → app.** The daemon is the central sink; the dashboard app tails it
   live over one XPC method, `feed(since=<cursor>)`, and derives all views
   (Gantt, create-rate, throughput) client-side.
+
+**License**
+
+MIT — see [LICENSE](LICENSE). The `cfs` backend is a separate, commercially
+licensed product and is not part of this repository; `crates/cfs` here is an
+MIT-licensed stand-in for it.
