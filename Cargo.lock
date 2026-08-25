@@ -15,8 +15,6 @@ name = "backend-cfs"
 version = "0.1.0"
 dependencies = [
  "backend",
- "libc",
- "rustc-hash",
 ]
 
 [[package]]

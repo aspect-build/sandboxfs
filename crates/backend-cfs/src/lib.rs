@@ -1,11 +1,3 @@
-// Stand-in for the projection backend, which is developed in its own (private) repository.
-//
-// The controller links this by default so an ordinary build of this workspace resolves entirely
-// from paths and never reaches for that repo — a cargo feature could not do that, since the
-// resolver reads every dependency's manifest whether or not a feature enables it. Release builds
-// swap the dependency over to the git source (see packaging/package.sh); this `open` mirrors the
-// real crate's, and refusing here is what a build that did not swap reports at runtime.
-
 use backend::{Backend, Options};
 use std::io;
 use std::sync::Arc;

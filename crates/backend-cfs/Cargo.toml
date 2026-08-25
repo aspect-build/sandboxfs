@@ -5,9 +5,4 @@ edition = "2021"
 license = "MIT"
 
 [dependencies]
-# These mirror the real crate's dependencies exactly, including ones this stub never uses: a
-# `paths` override (see .cargo/config.toml) refuses to swap one crate for another whose dependency
-# list differs. Add whatever backend-cfs adds.
-backend = { git = "ssh://git@github.com/aspect-build/sandboxfs.git", branch = "main" }
-libc = "0.2"
-rustc-hash = "2"
+backend = { path = "../backend" }
