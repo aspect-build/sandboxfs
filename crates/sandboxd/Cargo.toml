@@ -11,6 +11,6 @@ path = "src/main.rs"
 [dependencies]
 backend = { path = "../backend" }
 # Swapped to the git source for release builds; see packaging/package.sh.
-cfs = { path = "../cfs" }
+backend-cfs = { path = "../backend-cfs" }
 metrics = { path = "../metrics" }
 libc = "0.2"

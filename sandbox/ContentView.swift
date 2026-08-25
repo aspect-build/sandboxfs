@@ -61,7 +61,7 @@ struct Sample: Identifiable {
 struct Build: Identifiable {
     let id: String                 // build_id (execroot path)
     let name: String               // workspace name (from execroot/DO_NOT_BUILD_HERE)
-    let backend: String            // cfs | lazyfs
+    let backend: String            // cfs | fskit
     let started: Date
     var ended: Date?               // nil while running
     var procs: Int

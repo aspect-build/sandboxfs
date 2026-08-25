@@ -24,7 +24,7 @@ nonisolated struct Feed: Codable {
 
 nonisolated struct WSMetrics: Codable {
     let workspace: String              // execroot path; "" == unattributed
-    let backend: String                // cfs | lazyfs
+    let backend: String                // cfs | fskit
     let active: Bool
     let startMs: UInt64
     let endMs: UInt64?

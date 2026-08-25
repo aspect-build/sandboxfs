@@ -4,7 +4,7 @@ A fast, symlink-free macOS sandbox for Bazel, backed by an FSKit filesystem.
 
 ### Requirements
 
-- macOS on Apple Silicon (arm64). The default `cfs` backend runs on current and older releases; the `lazyfs` backend requires macOS **26.4+**.
+- macOS on Apple Silicon (arm64). The default `cfs` backend runs on current and older releases; the `fskit` backend requires macOS **26.4+**.
 - A Bazel built with **[bazelbuild/bazel#29886](https://github.com/bazelbuild/bazel/pull/29886)** — the `--sandbox_backend` spawn strategy isn't in a released Bazel yet (see below).
 
 ### Install

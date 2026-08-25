@@ -1,4 +1,4 @@
-// FSKit backend (lazyfs): ONE persistent appex mount serves every sandbox as a
+// FSKit backend (fskit): ONE persistent appex mount serves every sandbox as a
 // per-id subroot, lazily materialized by the appex on first access from a manifest
 // file this backend drops. A create is therefore just "write <id>.pb" — no clone,
 // no per-sandbox mount — so it costs sub-millisecond regardless of closure size,
@@ -136,7 +136,7 @@ fn harvest(src: &Path, exec_root: &Path) -> io::Result<()> {
 
 impl Backend for Fskit {
     fn name(&self) -> &'static str {
-        "lazyfs"
+        "fskit"
     }
 
     fn mount_path(&self) -> &Path {

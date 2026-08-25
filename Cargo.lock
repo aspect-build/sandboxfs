@@ -11,7 +11,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "cfs"
+name = "backend-cfs"
 version = "0.1.0"
 dependencies = [
  "backend",
@@ -41,7 +41,7 @@ name = "sandboxd"
 version = "0.1.0"
 dependencies = [
  "backend",
- "cfs",
+ "backend-cfs",
  "libc",
  "metrics",
 ]

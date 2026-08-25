@@ -1,8 +1,8 @@
 [workspace]
 members = ["crates/*"]
-# fskit-fs (lazyfs) is out of the build: it serves a single persistent appex mount, and the appex
-# is broken -- it still parses the pre-canonical manifest wire. Source stays for that rework.
-exclude = ["crates/fskit-fs"]
+# backend-fskit is out of the build: it serves a single persistent appex mount, and the appex is
+# broken -- it still parses the pre-canonical manifest wire. Source stays for that rework.
+exclude = ["crates/backend-fskit"]
 resolver = "2"
 
 [profile.release]
@@ -10,7 +10,7 @@ opt-level = 3
 lto = true
 strip = "symbols"   # hand no function names to a reverser; highest-value, lowest-effort
 
-# Only in effect once packaging swaps `cfs` over to its git source: that crate pulls `backend`
+# Only in effect once packaging swaps `backend-cfs` over to its git source: that crate pulls `backend`
 # from this repo over git, and without this it would be a second, distinct copy whose
 # `dyn Backend` does not unify with the one the controller links. Inert (and fetch-free) for a
 # path build, since the patch names a source nothing depends on.

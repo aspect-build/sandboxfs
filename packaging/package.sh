@@ -94,7 +94,7 @@ build() {
     say "building sandboxfs CLI (universal) via cargo…"
     # The Rust controller (crates/sandboxd, bin `sandboxfs`). The projection backend is
     # developed in its own repository, and the workspace builds against the in-tree stand-in
-    # (crates/cfs) so an ordinary build needs no access to it — a cargo feature could not do
+    # (crates/backend-cfs) so an ordinary build needs no access to it — a cargo feature could not do
     # that, since the resolver reads every dependency's manifest whether a feature enables it
     # or not. A shipped binary must carry the real one, so swap the dependency over for the
     # duration of the build and put it back however this exits. Restoring from a copy, not
@@ -107,15 +107,15 @@ build() {
         cp "$WORK/Cargo.lock.orig" "$ROOT/Cargo.lock"
     }
     trap restore_cfs_dep EXIT
-    sed -i '' 's|^cfs = { path = "../cfs" }$|cfs = { git = "ssh://git@github.com/aspect-build/cfs.git", branch = "main" }|' "$CFS_MANIFEST"
-    grep -q '^cfs = { git = ' "$CFS_MANIFEST" || die "could not point the cfs dependency at its git source"
+    sed -i '' 's|^backend-cfs = { path = "../backend-cfs" }$|backend-cfs = { git = "ssh://git@github.com/aspect-build/cfs.git", branch = "main" }|' "$CFS_MANIFEST"
+    grep -q '^backend-cfs = { git = ' "$CFS_MANIFEST" || die "could not point the backend-cfs dependency at its git source"
     # A path override (cargo's `paths`, e.g. from a .cargo/config.toml in a parent directory)
     # outranks the manifest and would quietly build whatever is in a local checkout. Confirm what
     # actually resolved, so a release can only ever carry published code.
-    cfs_src="$(cargo tree -p sandboxd -e normal 2>/dev/null | grep -m1 'cfs v')"
+    cfs_src="$(cargo tree -p sandboxd -e normal 2>/dev/null | grep -m1 'backend-cfs v')"
     case "$cfs_src" in
         *"aspect-build/cfs.git"*) ;;
-        *) die "cfs resolved to '${cfs_src:-nothing}', not its git source — a local path override would ship unpublished code" ;;
+        *) die "backend-cfs resolved to '${cfs_src:-nothing}', not its git source — a local path override would ship unpublished code" ;;
     esac
 
     # cargo can't emit a fat binary directly, so build both slices and lipo them — the

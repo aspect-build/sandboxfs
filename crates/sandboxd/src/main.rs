@@ -73,7 +73,7 @@ fn resolve(flag: Option<&str>, env: Option<&str>) -> io::Result<()> {
 fn select(flag: Option<&str>, workspace: &str, options: &Options) -> io::Result<Arc<dyn Backend>> {
     let env = std::env::var("sandboxfs_backend").or_else(|_| std::env::var("SANDBOXFS_BACKEND")).ok();
     resolve(flag, env.as_deref())?;
-    cfs::open(workspace, options)
+    backend_cfs::open(workspace, options)
 }
 
 /// Spawns the worker pool that drains `queue` and writes framed replies (rid echoed, so
@@ -428,7 +428,7 @@ mod tests {
         assert!(resolve(None, None).is_ok(), "default backend");
         assert!(resolve(None, Some("CFS")).is_ok(), "env selects cfs, case-insensitively");
         assert!(resolve(Some("cfs"), Some("nope")).is_ok(), "flag wins over env");
-        assert!(resolve(None, Some("lazyfs")).is_err(), "lazyfs is not built today");
+        assert!(resolve(None, Some("fskit")).is_err(), "fskit is not built today");
     }
 
     struct StubBackend;

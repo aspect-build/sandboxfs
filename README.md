@@ -19,7 +19,7 @@ flowchart TD
 
     subgraph backend["backend"]
         cfs["cfs (default)"]
-        lazy["lazyfs — fskit-fs → FSKit appex"]
+        lazy["fskit — backend-fskit → FSKit appex"]
         cfsr1(["root"])
         cfsr2(["root"])
         cfsr3(["root"])
@@ -44,11 +44,11 @@ flowchart TD
   locations), `Create` (an input-tree manifest → the path the action runs in),
   `Collect` (harvest declared outputs), `Destroy`.
 - **Controller → backend.** The controller dispatches through the `Backend` trait.
-  `cfs` (default) projects inputs as real isolated files — no symlinks; `lazyfs`
-  (`fskit-fs`) routes to the FSKit appex. `cfs` itself is developed in its own
-  repository: this workspace builds against the stand-in in `crates/cfs`, so an
+  `cfs` (default) projects inputs as real isolated files — no symlinks; `fskit`
+  (`backend-fskit`) routes to the FSKit appex. `cfs` itself is developed in its own
+  repository: this workspace builds against the stand-in in `crates/backend-cfs`, so an
   ordinary `cargo build` needs no access to it and yields a controller that serves
-  `lazyfs` and reports the missing backend for `cfs`. `packaging/package.sh` points
+  `fskit` and reports the missing backend for `cfs`. `packaging/package.sh` points
   the dependency at the real crate for the duration of a release build.
 - **Controller → metricsd.** On a metrics-opted-in `Negotiate`, `MetricsGate`
   brackets build windows with `begin`/`end` and periodically pushes the backend's
@@ -62,5 +62,5 @@ flowchart TD
 **License**
 
 MIT — see [LICENSE](LICENSE). The `cfs` backend is a separate, commercially
-licensed product and is not part of this repository; `crates/cfs` here is an
+licensed product and is not part of this repository; `crates/backend-cfs` here is an
 MIT-licensed stand-in for it.

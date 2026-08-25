@@ -9,20 +9,20 @@ traps in it. The Rust half behaves the way you expect: `cargo build`, `cargo tes
 
 ## What is and isn't here
 
-This repository holds the controller Bazel talks to, the backend interface, the `lazyfs` backend
+This repository holds the controller Bazel talks to, the backend interface, the `fskit` backend
 built on FSKit, the metrics daemon, and the dashboard app. The default `cfs` backend is a
-separate commercial product and is not part of this repository; `crates/cfs` here is an
+separate commercial product and is not part of this repository; `crates/backend-cfs` here is an
 MIT-licensed stand-in with the same entry point that returns "unsupported". A build of this
-repository is complete and useful without it — it serves `lazyfs`, and every test passes.
+repository is complete and useful without it — it serves `fskit`, and every test passes.
 
 | Path | What it is |
 |---|---|
 | `crates/backend` | The `Backend` trait, the protobuf wire codec, the blob store, the pool location, daemon-level counters |
 | `crates/sandboxd` | The `sandboxfs` binary: the stdio server Bazel drives, its worker pool, the metrics gate |
-| `crates/fskit-fs` | The `lazyfs` backend — writes a manifest the appex materializes lazily |
+| `crates/backend-fskit` | The `fskit` backend — writes a manifest the appex materializes lazily |
 | `crates/metrics` | The root `metricsd` LaunchDaemon: kdebug syscall attribution per workspace, and its XPC feed |
-| `crates/cfs` | Stand-in for the commercial backend (see above) |
-| `fskit-appex/` | The FSKit module `lazyfs` mounts |
+| `crates/backend-cfs` | Stand-in for the commercial backend (see above) |
+| `fskit-appex/` | The FSKit module `fskit` mounts |
 | `sandbox/` | The metrics dashboard app |
 | `packaging/` | Signing, notarization, `.pkg`/`.dmg` assembly |
 
@@ -35,7 +35,7 @@ repository is complete and useful without it — it serves `lazyfs`, and every t
 - **`sandbox`** — the dashboard app (`sandbox/`). It is also the registration vehicle: an FSKit
   module is only discoverable through the `.app` that embeds it.
 - **the appex** (`fskit-appex/`) — an ExtensionKit extension, embedded into the app at
-  `Contents/Extensions/`. This is what actually serves `lazyfs` mounts.
+  `Contents/Extensions/`. This is what actually serves `fskit` mounts.
 
 They ship as one version-locked artifact, together with the Rust CLI, for that reason.
 
@@ -139,7 +139,7 @@ Implementations are shared across worker threads, so `&self` and `Send + Sync`.
 Wire it up in `select()` in `crates/sandboxd/src/main.rs` and give it a name in `resolve()`. The
 backend name is folded into the pool key, so two backends never share a workspace subtree.
 
-`crates/cfs` is the one file to leave alone: its `open` signature is mirrored by the commercial
+`crates/backend-cfs` is the one file to leave alone: its `open` signature is mirrored by the commercial
 crate, and changing it here breaks that build without any local test failing.
 
 ## Running a real Bazel build
