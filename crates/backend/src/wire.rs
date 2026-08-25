@@ -165,7 +165,7 @@ impl Writer {
     pub(crate) fn key(&mut self, field: u32, wire: u32) {
         self.varint(((field << 3) | wire) as u64);
     }
-    pub(crate) fn bytes(&mut self, field: u32, b: &[u8]) {
+    pub fn bytes(&mut self, field: u32, b: &[u8]) {
         self.key(field, 2);
         self.varint(b.len() as u64);
         self.out.extend_from_slice(b);
@@ -176,23 +176,13 @@ impl Writer {
     pub fn msg(&mut self, field: u32, b: &[u8]) {
         self.bytes(field, b);
     }
-    pub(crate) fn uint(&mut self, field: u32, v: u64) {
+    pub fn uint(&mut self, field: u32, v: u64) {
         self.key(field, 0);
         self.varint(v);
     }
-    pub(crate) fn bool(&mut self, field: u32, v: bool) {
+    pub fn bool(&mut self, field: u32, v: bool) {
         self.uint(field, if v { 1 } else { 0 });
     }
 }
 
-pub(crate) fn encode_digest(hash: &str, size: u64) -> Vec<u8> {
-    let mut w = Writer::default();
-    if !hash.is_empty() {
-        w.str(1, hash);
-    }
-    if size != 0 {
-        w.uint(2, size);
-    }
-    w.out
-}
 

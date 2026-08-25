@@ -1,7 +1,6 @@
 use crate::blobstore::BlobStore;
-use crate::wire::{digest_hash, encode_digest, parse_digest, parse_map_entry, sha256_hex, string, Reader, Writer};
+use crate::wire::{digest_hash, parse_digest, parse_map_entry, sha256_hex, string, Reader, Writer};
 use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
-use std::collections::BTreeMap;
 use std::sync::Arc;
 
 /// What an empty `Directory` hashes to. Bazel ships no blob for it, so this is never a missing
@@ -438,117 +437,6 @@ fn host_kind(v: u64) -> DirHostKind {
     }
 }
 
-/// A tree flattened back into REAPI `Directory` blobs -- what a `Push` ships.
-pub struct Flat {
-    /// SHA-256 of the root `Directory` bytes: the digest a manifest names it by.
-    pub root_digest: String,
-    /// Every directory in the closure, root included, as (digest, serialized `Directory`).
-    pub blobs: Vec<(String, Vec<u8>)>,
-    /// digest -> host source, for the leaves whose host path is not `exec_root/<tree path>`.
-    pub host_mapping: BTreeMap<String, String>,
-}
-
-/// Flatten `root` into content-addressed blobs. Leaves whose host path is exactly
-/// `exec_root/<tree path>` are left out of `host_mapping` -- the decoder derives those.
-pub fn flatten(root: &Dir, exec_root: Option<&str>) -> Flat {
-    let mut blobs = Vec::new();
-    let mut seen = HashSet::default();
-    let mut host_mapping = BTreeMap::new();
-    let (root_bytes, root_digest, _) = encode_dir(root, &mut blobs, &mut seen, &mut host_mapping, exec_root, "");
-    blobs.insert(0, (root_digest.clone(), root_bytes));
-    Flat { root_digest, blobs, host_mapping }
-}
-
-/// The host source to record, or None when the decoder can derive it. Dirs are never omitted: a
-/// dir's host path is the whole-subtree-clone signal, and that is never derived.
-fn host_value(exec_root: Option<&str>, path: &str, host_path: &str, is_file: bool) -> Option<String> {
-    let Some(er) = exec_root else { return Some(host_path.to_string()) };
-    if is_file && host_path == format!("{er}/{path}") {
-        return None;
-    }
-    Some(host_path.strip_prefix(&format!("{er}/")).map(|s| s.to_string()).unwrap_or_else(|| host_path.to_string()))
-}
-
-pub(crate) fn encode_dir(
-    d: &Dir,
-    children: &mut Vec<(String, Vec<u8>)>,
-    seen: &mut HashSet<String>,
-    host_mapping: &mut BTreeMap<String, String>,
-    exec_root: Option<&str>,
-    path: &str,
-) -> (Vec<u8>, String, u64) {
-    let mut w = Writer::default();
-    let mut files: Vec<&File> = d.files.iter().collect();
-    files.sort_by(|a, b| a.name.cmp(&b.name));
-    for f in files {
-        w.msg(1, &encode_file_node(f));
-        if !f.host_path.is_empty() && !f.digest.is_empty() {
-            let p = if path.is_empty() {
-                f.name.clone()
-            } else {
-                format!("{}/{}", path, f.name)
-            };
-            if let Some(v) = host_value(exec_root, &p, &f.host_path, true) {
-                host_mapping.insert(f.digest.clone(), v);
-            }
-        }
-    }
-    let mut dirs: Vec<&Dir> = d.directories.iter().collect();
-    dirs.sort_by(|a, b| a.name.cmp(&b.name));
-    for sub in dirs {
-        let sub_path = if path.is_empty() {
-            sub.name.clone()
-        } else {
-            format!("{}/{}", path, sub.name)
-        };
-        let (sub_bytes, sub_dg, sub_size) = encode_dir(sub, children, seen, host_mapping, exec_root, &sub_path);
-        w.msg(2, &encode_dir_node(&sub.name, &sub_dg, sub_size));
-        if seen.insert(sub_dg.clone()) {
-            children.push((sub_dg, sub_bytes));
-        }
-    }
-    let mut syms: Vec<&Symlink> = d.symlinks.iter().collect();
-    syms.sort_by(|a, b| a.name.cmp(&b.name));
-    for s in syms {
-        w.msg(3, &encode_symlink_node(s));
-    }
-    let dg = sha256_hex(&w.out);
-    // Keyed by the digest just computed, which is why it lands here rather than at entry.
-    if !d.host_path.is_empty() && !path.is_empty() {
-        if let Some(v) = host_value(exec_root, path, &d.host_path, false) {
-            host_mapping.insert(dg.clone(), v);
-        }
-    }
-    let size = w.out.len() as u64;
-    (std::mem::take(&mut w.out), dg, size)
-}
-
-fn encode_file_node(f: &File) -> Vec<u8> {
-    let mut w = Writer::default();
-    w.str(1, &f.name);
-    if !f.digest.is_empty() || f.size != 0 {
-        w.msg(2, &encode_digest(&f.digest, f.size));
-    }
-    if f.executable {
-        w.bool(4, true);
-    }
-    w.out
-}
-
-fn encode_dir_node(name: &str, hash: &str, size: u64) -> Vec<u8> {
-    let mut w = Writer::default();
-    w.str(1, name);
-    w.msg(2, &encode_digest(hash, size));
-    w.out
-}
-
-fn encode_symlink_node(s: &Symlink) -> Vec<u8> {
-    let mut w = Writer::default();
-    w.str(1, &s.name);
-    w.str(2, &s.target);
-    w.out
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -662,9 +550,12 @@ mod tests {
     }
 
     fn dir_node(name: &str, child_bytes: &[u8]) -> Vec<u8> {
+        let mut digest = Writer::default();
+        digest.str(1, &sha256_hex(child_bytes));
+        digest.uint(2, child_bytes.len() as u64);
         let mut d = Writer::default();
         d.str(1, name);
-        d.msg(2, &encode_digest(&sha256_hex(child_bytes), child_bytes.len() as u64));
+        d.msg(2, &digest.out);
         d.out
     }
 
