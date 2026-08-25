@@ -147,8 +147,8 @@ impl Session {
     // fs_usage/latency do. Reliably detecting another live consumer isn't worth it —
     // macOS often leaves the facility initialized at idle, so a BUFINIT check just
     // false-blocks. KDREMOVE first clears any prior or leaked session.
-    // ponytail: takes over kdebug unconditionally; add owner-detection only if a
-    // concurrent Instruments session during a metrics build turns out to matter.
+    // Takes kdebug over unconditionally; owner-detection can wait until someone actually runs
+    // Instruments during a metrics build.
     pub fn start() -> io::Result<Session> {
         let _ = kd_op(KDREMOVE, 0);
         kd_op(KDSETBUF, NBUFS)?;

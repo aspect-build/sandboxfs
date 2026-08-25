@@ -9,8 +9,7 @@
 // write-through target — the appex projects each declared output as a symlink into
 // here, the action writes through, and collect harvests the tree out to exec_root).
 
-use backend::proto::ManifestDecode;
-use backend::{proto, Backend, BlobStore, CreateOutcome};
+use backend::{proto, Backend, CreateError, Decoded, Manifest};
 use std::collections::BTreeMap;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -33,6 +32,7 @@ fn remove(p: &Path) -> io::Result<()> {
 }
 
 pub struct Fskit {
+    root: PathBuf,
     mnt: PathBuf,
     manifests: PathBuf,
     scratch: PathBuf,
@@ -46,7 +46,7 @@ impl Fskit {
         for d in [&mnt, &manifests, &scratch] {
             mkdir_p(d)?;
         }
-        let fs = Fskit { mnt, manifests, scratch };
+        let fs = Fskit { root, mnt, manifests, scratch };
         fs.ensure_mounted()?;
         Ok(fs)
     }
@@ -86,7 +86,7 @@ fn join_under(root: &Path, rel: &str) -> PathBuf {
 /// Rewrite the controller's outputs/writable_dirs (path -> kind) so each value is the
 /// host SCRATCH target the appex symlinks to, and pre-create that target writable so
 /// the action's write-through lands on a real file. Returns the rewritten manifest.
-fn stage_outputs(mut m: proto::Manifest, scratch: &Path) -> io::Result<proto::Manifest> {
+fn stage_outputs(mut m: Decoded, scratch: &Path) -> io::Result<Decoded> {
     let retarget = |map: &BTreeMap<String, String>, dir_kind_only: bool| -> io::Result<BTreeMap<String, String>> {
         let mut out = BTreeMap::new();
         for (path, kind) in map {
@@ -135,17 +135,21 @@ fn harvest(src: &Path, exec_root: &Path) -> io::Result<()> {
 }
 
 impl Backend for Fskit {
-    fn create(&self, sandbox_id: &str, manifest_bytes: &[u8], store: &BlobStore) -> io::Result<CreateOutcome> {
-        let m = match proto::decode_wire(manifest_bytes, store) {
-            Some(ManifestDecode::Ready(m)) => m,
-            Some(ManifestDecode::Missing(hashes)) => return Ok(CreateOutcome::MissingContent(hashes)),
-            None => return Err(io::Error::new(io::ErrorKind::InvalidData, "manifest decode failed")),
-        };
-        let m = stage_outputs(m, &self.scratch.join(sandbox_id))?;
-        // Re-encode self-contained (tree inline) for the appex, which reads these manifest files.
+    fn name(&self) -> &'static str {
+        "lazyfs"
+    }
+
+    fn mount_path(&self) -> &Path {
+        &self.root
+    }
+
+    fn create(&self, sandbox_id: &str, manifest: Manifest) -> Result<String, CreateError> {
+        // Nothing is materialized here, so there is no cheap tier to take: the appex needs the
+        // whole tree inline in the manifest file it reads.
+        let m = stage_outputs(manifest.into_decoded()?, &self.scratch.join(sandbox_id))?;
         std::fs::write(self.manifest_path(sandbox_id), proto::encode(&m))?;
         // The appex materializes mnt/<id> lazily on the action's first access.
-        Ok(CreateOutcome::Created(self.mnt.join(sandbox_id).to_string_lossy().into_owned()))
+        Ok(self.mnt.join(sandbox_id).to_string_lossy().into_owned())
     }
 
     fn collect(&self, sandbox_id: &str, exec_root: &str) -> io::Result<()> {

@@ -1,5 +1,8 @@
 [workspace]
 members = ["crates/*"]
+# fskit-fs (lazyfs) is out of the build: it serves a single persistent appex mount, and the appex
+# is broken -- it still parses the pre-canonical manifest wire. Source stays for that rework.
+exclude = ["crates/fskit-fs"]
 resolver = "2"
 
 [profile.release]

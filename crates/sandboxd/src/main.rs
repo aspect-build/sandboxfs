@@ -1,5 +1,7 @@
 use backend::proto::{self, ContentSource, CreateReply, NegotiateReply, Reply, Request, Response, Status};
-use backend::{stats, Backend, BlobStore, CreateOutcome};
+use backend::{Backend, BlobStore, CreateError, Manifest, Options};
+mod stats;
+
 use std::collections::VecDeque;
 use std::io::{self, Read, Write};
 use std::sync::{Arc, Condvar, Mutex};
@@ -8,43 +10,6 @@ use std::thread;
 fn main() {
     let mut args = std::env::args().skip(1);
     match args.next().as_deref() {
-        Some("debugmanifest") => {
-            let path = args.next().expect("usage: debugmanifest <manifest.pb>");
-            let m = proto::decode_manifest(&std::fs::read(&path).unwrap()).expect("decode");
-            fn walk(d: &proto::Dir, path: &str, n: &mut usize, s: &mut Vec<String>) {
-                if !d.host_path.is_empty() {
-                    *n += 1;
-                    if s.len() < 8 {
-                        s.push(format!("{path} -> {}", d.host_path));
-                    }
-                }
-                for sub in &d.directories {
-                    let p = if path.is_empty() { sub.name.clone() } else { format!("{path}/{}", sub.name) };
-                    walk(sub, &p, n, s);
-                }
-            }
-            let (mut n, mut s) = (0usize, Vec::new());
-            if let Some(r) = &m.root {
-                walk(r, "", &mut n, &mut s);
-            }
-            eprintln!("dirs with host_path: {n}");
-            for x in &s {
-                eprintln!("  {x}");
-            }
-        }
-        // Dev helper: build a manifest.pb from a real directory tree, for manually
-        // mounting the appex (`mount -F -t sandboxfs -o nobrowse <out.pb> <mnt>`).
-        Some("mkmanifest") => {
-            let src = args.next().expect("usage: mkmanifest <src_dir> <out.pb>");
-            let out = args.next().expect("usage: mkmanifest <src_dir> <out.pb>");
-            let m = proto::Manifest {
-                mnemonic: Some("manual-test".into()),
-                root: Some(build_dir_from_fs(std::path::Path::new(&src))),
-                ..Default::default()
-            };
-            std::fs::write(&out, proto::encode(&m)).expect("write manifest");
-            eprintln!("wrote {out}");
-        }
         Some("serve") => {
             let rest: Vec<String> = args.collect();
             let workspace = flag(&rest, "--workspace")
@@ -52,14 +17,13 @@ fn main() {
                 .unwrap_or_else(|| ".".into());
             serve(&workspace, flag(&rest, "--backend").as_deref());
         }
-        // The metrics daemon (root LaunchDaemon) and its client. The daemon owns
-        // kdebug only between begin/end, so it is otherwise inert.
+        // The metrics daemon (root LaunchDaemon) owns kdebug only between begin/end.
         Some("metricsd") => metrics::run_daemon(),
         Some("metrics") => {
             let method = args.next().unwrap_or_default();
             let build_id = args.next().unwrap_or_default();
-            // Optional explicit prefix (for `begin`, mainly manual testing); the real
-            // controller always supplies the backend's prefix via the gate.
+            // Optional explicit prefix (for `begin`, mainly manual testing); the controller
+            // always supplies the backend's prefix via the gate.
             let prefix = args.next();
             let needs_id = matches!(method.as_str(), "begin" | "end");
             if !(needs_id || matches!(method.as_str(), "feed" | "clear")) || (needs_id && build_id.is_empty()) {
@@ -70,7 +34,7 @@ fn main() {
             }
             // `feed` takes an optional since cursor in the build_id slot (manual debug).
             let payload = if method == "feed" { build_id.clone() } else { String::new() };
-            let prefix = prefix.unwrap_or_else(|| backend::pool::pool_root().to_string_lossy().into_owned());
+            let prefix = prefix.unwrap_or_default(); // only `begin` uses it; the controller supplies the real one
             match metrics::client(&method, &build_id, &prefix, &payload) {
                 Ok(Some(json)) => println!("{json}"),
                 Ok(None) => {}
@@ -81,7 +45,7 @@ fn main() {
             }
         }
         _ => {
-            eprintln!("usage: sandboxfs serve [--workspace <path>] [--backend cfs|lazyfs]");
+            eprintln!("usage: sandboxfs serve [--workspace <path>] [--backend cfs]");
             eprintln!("       sandboxfs metrics <begin|end> <build_id>   (read: sandboxfs metrics feed)");
             eprintln!("       backend also settable via env sandboxfs_backend (Bazel: --client_env=sandboxfs_backend=cfs)");
             std::process::exit(2);
@@ -89,80 +53,27 @@ fn main() {
     }
 }
 
-/// Walk a real directory into a manifest tree, each file backed by its absolute
-/// host path (dev helper for manual appex mounts).
-fn build_dir_from_fs(dir: &std::path::Path) -> proto::Dir {
-    let mut d = proto::Dir::default();
-    let mut entries: Vec<_> = std::fs::read_dir(dir).into_iter().flatten().flatten().collect();
-    entries.sort_by_key(|e| e.file_name());
-    for e in entries {
-        let path = e.path();
-        let name = e.file_name().to_string_lossy().into_owned();
-        match e.file_type() {
-            Ok(ft) if ft.is_dir() => {
-                let mut sub = build_dir_from_fs(&path);
-                sub.name = name;
-                d.directories.push(sub);
-            }
-            Ok(ft) if ft.is_symlink() => {
-                let target = std::fs::read_link(&path).unwrap_or_default().to_string_lossy().into_owned();
-                d.symlinks.push(proto::Symlink { name, target });
-            }
-            _ => {
-                let body = std::fs::read(&path).unwrap_or_default();
-                d.files.push(proto::File {
-                    digest: proto::sha256_hex(&body),
-                    host_path: path.to_string_lossy().into_owned(),
-                    size: body.len() as u64,
-                    name,
-                    executable: false,
-                });
-            }
-        }
-    }
-    d
-}
-
 fn flag(args: &[String], name: &str) -> Option<String> {
     let i = args.iter().position(|a| a == name)?;
     args.get(i + 1).cloned()
 }
 
-enum Kind {
-    Cfs,
-    Lazy,
-}
-
-/// Resolve a backend name to a kind. `--backend` flag wins, else the env knob, else
-/// the default (cfs). Case-insensitive.
-fn resolve(flag: Option<&str>, env: Option<&str>) -> io::Result<Kind> {
+/// Check the requested backend name. `--backend` flag wins, else the env knob, else the default.
+/// Case-insensitive. cfs is the only backend that builds today (see the workspace `exclude`).
+fn resolve(flag: Option<&str>, env: Option<&str>) -> io::Result<()> {
     match flag.or(env).map(|s| s.to_ascii_lowercase()).as_deref() {
-        None | Some("cfs") => Ok(Kind::Cfs),
-        Some("lazyfs") => Ok(Kind::Lazy),
-        Some(other) => Err(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            format!("unknown backend {other:?} (expected: cfs|lazyfs)"),
-        )),
+        None | Some("cfs") => Ok(()),
+        Some(other) => Err(io::Error::new(io::ErrorKind::InvalidInput, format!("unknown backend {other:?} (expected: cfs)"))),
     }
 }
 
-/// Build the projection backend. The env knob is what Bazel sets via
-/// `--client_env=sandboxfs_backend=…`. The backend label is folded into the pool key
-/// (see `workspace_key`) so the same workspace built under two backends never shares
-/// a subtree — their on-disk slot layouts are incompatible. `options` (from the Negotiate
-/// handshake) may carry `--pool-root=<path>`: required when the default pool root (`$HOME` or
-/// `SANDBOXFS_POOL`) isn't on the same volume as `workspace` — projection and rename are
-/// same-device-only, so there's no safe default to guess; `check_same_device` fails fast with
-/// the fix instead of letting it surface later as a cryptic EXDEV.
-fn select(flag: Option<&str>, workspace: &str, options: &[String]) -> io::Result<Arc<dyn Backend>> {
-    let explicit = options.iter().find_map(|o| o.strip_prefix("--pool-root="));
-    let root = backend::pool::resolve_pool_root(explicit);
-    backend::pool::check_same_device(&root, std::path::Path::new(workspace))?;
+/// Build the projection backend. This is the whole of the daemon's knowledge of any particular
+/// backend -- one call to get a `dyn Backend`; everything after it goes through the trait. Where
+/// its state lives on disk, and whether that placement is legal, is the backend's own business.
+fn select(flag: Option<&str>, workspace: &str, options: &Options) -> io::Result<Arc<dyn Backend>> {
     let env = std::env::var("sandboxfs_backend").or_else(|_| std::env::var("SANDBOXFS_BACKEND")).ok();
-    match resolve(flag, env.as_deref())? {
-        Kind::Cfs => cfs::open(&root, "cfs", workspace),
-        Kind::Lazy => Ok(Arc::new(fskit_fs::Fskit::open(&root, "lazyfs", workspace)?)),
-    }
+    resolve(flag, env.as_deref())?;
+    cfs::open(workspace, options)
 }
 
 /// Spawns the worker pool that drains `queue` and writes framed replies (rid echoed, so
@@ -188,7 +99,7 @@ fn spawn_workers(backend: Arc<dyn Backend>, queue: Arc<Queue>, out: Arc<Mutex<io
                     // The action mnemonic rides on the Create manifest (field 16); peek just
                     // that field (no tree, no maps) so grouping stays off the create hot path.
                     let mnemonic = match &req {
-                        Request::Create { manifest_bytes, .. } => proto::peek_mnemonic(manifest_bytes),
+                        Request::Create { manifest_bytes, .. } => Manifest::new(manifest_bytes).mnemonic().map(str::to_string),
                         _ => None,
                     };
                     stats::INFLIGHT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
@@ -196,8 +107,7 @@ fn spawn_workers(backend: Arc<dyn Backend>, queue: Arc<Queue>, out: Arc<Mutex<io
                     let resp = handle(backend.as_ref(), req, &store);
                     let handle = t0.elapsed();
                     stats::INFLIGHT.fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
-                    // Track live sandboxes for build-window detection: a successful
-                    // create adds one, a destroy removes one.
+                    // LIVE feeds the metrics gate's build-window detection.
                     match kind {
                         1 if matches!(resp.reply, Reply::Create(CreateReply::Ok { .. })) => {
                             stats::LIVE.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
@@ -223,14 +133,11 @@ fn spawn_workers(backend: Arc<dyn Backend>, queue: Arc<Queue>, out: Arc<Mutex<io
         .collect()
 }
 
-/// The controller, spawned by Bazel. Speaks varint length-delimited proto on
-/// stdin/stdout. A reader thread (this one) frames requests onto a queue; a pool
-/// of workers projects sandboxes concurrently and writes framed replies.
+/// The controller, spawned by Bazel: varint length-delimited proto on stdin/stdout. This thread
+/// frames requests onto a queue; a pool of workers projects sandboxes and writes framed replies.
 ///
-/// The backend itself isn't built until the Negotiate handshake arrives: that's the only place
-/// backend_arg options (`--metrics`, `--pool-root=<path>`) show up, and Bazel always sends it
-/// once, immediately, before any sandbox is created — so deferring costs nothing. Requests that
-/// somehow arrived first just sit on the queue until the workers spawn.
+/// The backend is not built until the handshake arrives, since that is where its options come
+/// from. Bazel always sends it first, so deferring costs nothing.
 fn serve(workspace: &str, backend_name: Option<&str>) {
     unsafe { libc::signal(libc::SIGPIPE, libc::SIG_IGN) };
 
@@ -255,6 +162,7 @@ fn serve(workspace: &str, backend_name: Option<&str>) {
             // The one-time handshake, sent before any sandbox is created: answer inline rather
             // than through the worker queue/timing stats, which model only Create/Collect/Destroy.
             Some(Request::Negotiate { rid, versions, options }) => {
+                let options = Options::parse(&options);
                 let backend = match select(backend_name, workspace, &options) {
                     Ok(b) => b,
                     Err(e) => {
@@ -262,13 +170,8 @@ fn serve(workspace: &str, backend_name: Option<&str>) {
                         std::process::exit(1);
                     }
                 };
-                backend.start();
-                let env = std::env::var("sandboxfs_backend").or_else(|_| std::env::var("SANDBOXFS_BACKEND")).ok();
-                let backend_label = match resolve(backend_name, env.as_deref()) {
-                    Ok(Kind::Lazy) => "lazyfs",
-                    _ => "cfs",
-                };
-                metrics = MetricsGate::start(workspace, backend.clone(), backend_label, &options);
+                backend.start(&options);
+                metrics = MetricsGate::start(workspace, backend.clone(), &options);
                 backend_ref = Some(backend.clone());
                 workers = spawn_workers(backend, queue.clone(), out.clone(), store.clone());
                 let frame = frame(&proto::encode_response(&negotiate(rid, &versions)));
@@ -277,33 +180,30 @@ fn serve(workspace: &str, backend_name: Option<&str>) {
                     break;
                 }
             }
-            // Fire-and-forget, no reply: apply to the store right here, before the next frame is
-            // read, so a Create that references these blobs (and is framed after this Push) always
-            // finds them once a worker picks it up.
+            // Fire-and-forget, no reply: applied inline so it lands before the next frame is read
+            // (the ordering invariant `store` above relies on).
             Some(Request::Push { blobs, content }) => {
-                let hashes: Vec<String> = blobs.iter().map(|(h, _)| h.clone()).collect();
-                store.insert_many(blobs);
-                // Capture-on-receipt: a `Content{location}` path is live only NOW, so snapshot each
-                // leaf into the backend's own store while processing this Push (never deferred to
-                // Create). A relative location resolves against the session exec root first. The
-                // captured host path is pinned in the store for the controller's lifetime.
-                if let Some(b) = &backend_ref {
-                    let er = store.exec_root();
-                    for (digest, source) in content {
-                        let source = match source {
-                            ContentSource::Location(host) if !host.starts_with('/') => match &er {
-                                Some(er) => ContentSource::Location(format!("{er}/{host}")),
-                                None => ContentSource::Location(host),
-                            },
-                            other => other,
-                        };
-                        if let Some(path) = b.capture_content(&digest, source) {
-                            store.insert_captured(digest, path);
+                let mut digests: Vec<String> = blobs.iter().map(|(h, _)| h.clone()).collect();
+                store.insert_dirs(blobs);
+                // A relative `location` is relative to the session exec root, and this is the only
+                // moment it means anything — resolve it before the backend ever sees it.
+                let er = store.exec_root().map(str::to_string);
+                let mut staged: Vec<(String, ContentSource)> = Vec::with_capacity(content.len());
+                for (digest, source) in content {
+                    digests.push(digest.clone());
+                    staged.push(match (source, &er) {
+                        (ContentSource::Location(host), Some(er)) if !host.starts_with('/') => {
+                            (digest, ContentSource::Location(format!("{er}/{host}")))
                         }
-                    }
-                    // Advisory: lets the clone backend pre-stage subtrees during the push window.
-                    b.blobs_pushed(&hashes);
+                        (source, _) => (digest, source),
+                    });
                 }
+                store.stage_content(staged);
+                if let Some(b) = &backend_ref {
+                    b.push(&store, &digests);
+                }
+                // Capture-on-receipt: whatever the backend did not take is not ours to read later.
+                store.clear_pending();
             }
             Some(req) => queue.push(req),
             None => {}
@@ -316,16 +216,11 @@ fn serve(workspace: &str, backend_name: Option<&str>) {
     metrics.finish();
 }
 
-/// Opt-in metrics, keyed by workspace. Bazel sends no build boundaries (only
-/// Create/Collect/Destroy) and keeps this controller alive across builds, so we infer
-/// each `bazel build` from live-sandbox edges: a build is running while `stats::LIVE`
-/// (creates minus destroys) is > 0 — which holds even across long request-silent gaps
-/// while actions run — and is done once LIVE has sat at 0 for IDLE_GRACE. The
-/// controller drives begin/end itself (so the daemon learns its pid, for per-workspace
-/// attribution); the daemon runs other workspaces' windows concurrently. Armed by either
-/// `--client_env=sandboxfs_metrics=1` or a `--metrics` backend arg (relayed via the Negotiate
-/// handshake's `options`, e.g. `--sandbox_backend_arg=<name>=--metrics`), and only when the
-/// backend opts into kdebug attribution.
+/// Opt-in metrics, keyed by workspace. Bazel sends no build boundaries and keeps this controller
+/// alive across builds, so a build is inferred from live-sandbox edges: running while `stats::LIVE`
+/// is above zero, done once it has sat at zero for the idle grace. The controller drives begin/end
+/// itself so the daemon learns its pid. Armed by `sandboxfs_metrics=1` or a `--metrics` backend
+/// arg.
 struct MetricsGate {
     stop: Option<Arc<std::sync::atomic::AtomicBool>>,
     monitor: Option<thread::JoinHandle<()>>,
@@ -338,15 +233,12 @@ impl MetricsGate {
         MetricsGate { stop: None, monitor: None }
     }
 
-    fn start(workspace: &str, backend: Arc<dyn Backend>, label: &'static str, options: &[String]) -> MetricsGate {
+    fn start(workspace: &str, backend: Arc<dyn Backend>, options: &Options) -> MetricsGate {
         let env_enabled = std::env::var("sandboxfs_metrics").ok().as_deref() == Some("1");
-        let opt_enabled = options.iter().any(|o| o == "--metrics");
-        if !(env_enabled || opt_enabled) {
+        if !(env_enabled || options.metrics) {
             return Self::off();
         }
-        let Some(prefix) = backend.metrics_prefix() else {
-            return Self::off(); // backend isn't observed via kdebug (e.g. lazyfs)
-        };
+        let prefix = backend.mount_path().to_string_lossy().into_owned();
         // How long LIVE must stay 0 before a build is called done. Bridges inter-wave
         // lulls; tunable via `--client_env=sandboxfs_idle_s=<seconds>` (default 4).
         let idle = std::env::var("sandboxfs_idle_s")
@@ -356,7 +248,7 @@ impl MetricsGate {
             .unwrap_or(std::time::Duration::from_secs(4));
         let stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
         let (ws, st) = (workspace.to_string(), stop.clone());
-        let monitor = thread::spawn(move || Self::watch(ws, prefix, backend, label, idle, st));
+        let monitor = thread::spawn(move || Self::watch(ws, prefix, backend, idle, st));
         MetricsGate { stop: Some(stop), monitor: Some(monitor) }
     }
 
@@ -364,13 +256,12 @@ impl MetricsGate {
         workspace: String,
         prefix: String,
         backend: Arc<dyn Backend>,
-        label: &'static str,
         idle: std::time::Duration,
         stop: Arc<std::sync::atomic::AtomicBool>,
     ) {
         use std::sync::atomic::Ordering::{Acquire, Relaxed};
         let report = |ws: &str| {
-            let _ = metrics::client("report", ws, "", &backend.report_text(label));
+            let _ = metrics::client("report", ws, "", &stats::report_text(backend.name()));
         };
         let mut open = false;
         let mut idle_since: Option<std::time::Instant> = None;
@@ -420,16 +311,16 @@ impl MetricsGate {
     }
 }
 
-fn handle(backend: &dyn Backend, req: Request, store: &BlobStore) -> Response {
+fn handle(backend: &dyn Backend, req: Request, store: &Arc<BlobStore>) -> Response {
     match req {
         Request::Create { rid, sandbox_id, manifest_bytes } => {
-            let reply = match backend.create(&sandbox_id, &manifest_bytes, store) {
+            let reply = match backend.create(&sandbox_id, &Manifest::new(&manifest_bytes), store) {
                 // Ok reports `unconfined`: our projected filesystem view IS the confinement, so
                 // Bazel applies no OS jail on top (a default Seatbelt jail would deny the action's
                 // $TMPDIR writes). See CreateReply::Ok.
-                Ok(CreateOutcome::Created(path)) => CreateReply::Ok { path },
-                Ok(CreateOutcome::MissingContent(hashes)) => CreateReply::MissingContent(hashes),
-                Err(e) => CreateReply::Error(format!("{e}")),
+                Ok(path) => CreateReply::Ok { path },
+                Err(CreateError::MissingContent(hashes)) => CreateReply::MissingContent(hashes),
+                Err(CreateError::Failed(e)) => CreateReply::Error(format!("{e}")),
             };
             Response { rid, reply: Reply::Create(reply) }
         }
@@ -534,34 +425,22 @@ mod tests {
 
     #[test]
     fn backend_resolution() {
-        let cfs = |f, e| matches!(resolve(f, e), Ok(Kind::Cfs));
-        let lazy = |f, e| matches!(resolve(f, e), Ok(Kind::Lazy));
-        assert!(cfs(None, None), "default backend");
-        assert!(cfs(None, Some("cfs")), "env selects cfs");
-        assert!(lazy(None, Some("LazyFS")), "env is case-insensitive");
-        assert!(lazy(Some("lazyfs"), Some("cfs")), "flag wins over env");
-        assert!(resolve(None, Some("nope")).is_err(), "unknown name errors");
-    }
-
-    /// A backend the metrics daemon observes: it names a path prefix for kdebug attribution.
-    struct ObservedBackend;
-    impl Backend for ObservedBackend {
-        fn create(&self, _sandbox_id: &str, _manifest_bytes: &[u8], _store: &BlobStore) -> io::Result<CreateOutcome> {
-            Ok(CreateOutcome::Created("/sandbox/path".into()))
-        }
-        fn collect(&self, _sandbox_id: &str, _exec_root: &str) -> io::Result<()> {
-            Ok(())
-        }
-        fn destroy(&self, _sandbox_id: &str) {}
-        fn metrics_prefix(&self) -> Option<String> {
-            Some("x".into())
-        }
+        assert!(resolve(None, None).is_ok(), "default backend");
+        assert!(resolve(None, Some("CFS")).is_ok(), "env selects cfs, case-insensitively");
+        assert!(resolve(Some("cfs"), Some("nope")).is_ok(), "flag wins over env");
+        assert!(resolve(None, Some("lazyfs")).is_err(), "lazyfs is not built today");
     }
 
     struct StubBackend;
     impl Backend for StubBackend {
-        fn create(&self, _sandbox_id: &str, _manifest_bytes: &[u8], _store: &BlobStore) -> io::Result<CreateOutcome> {
-            Ok(CreateOutcome::Created("/sandbox/path".into()))
+        fn name(&self) -> &'static str {
+            "stub"
+        }
+        fn mount_path(&self) -> &std::path::Path {
+            std::path::Path::new("/pool/stub")
+        }
+        fn create(&self, _sandbox_id: &str, _manifest: &Manifest<'_>, _store: &BlobStore) -> Result<String, CreateError> {
+            Ok("/sandbox/path".into())
         }
         fn collect(&self, _sandbox_id: &str, _exec_root: &str) -> io::Result<()> {
             Ok(())
@@ -572,7 +451,7 @@ mod tests {
     #[test]
     fn handle_create_reports_ok_path() {
         let req = Request::Create { rid: 1, sandbox_id: "sbx".into(), manifest_bytes: vec![] };
-        match handle(&StubBackend, req, &BlobStore::new()).reply {
+        match handle(&StubBackend, req, &Arc::new(BlobStore::new())).reply {
             Reply::Create(CreateReply::Ok { path }) => assert_eq!(path, "/sandbox/path"),
             other => panic!("expected Ok, got {other:?}"),
         }
@@ -584,8 +463,14 @@ mod tests {
     fn handle_create_relays_missing_content() {
         struct MissBackend;
         impl Backend for MissBackend {
-            fn create(&self, _s: &str, _m: &[u8], _store: &BlobStore) -> io::Result<CreateOutcome> {
-                Ok(CreateOutcome::MissingContent(vec!["deadbeef".into()]))
+            fn name(&self) -> &'static str {
+                "miss"
+            }
+            fn mount_path(&self) -> &std::path::Path {
+                std::path::Path::new("/pool/miss")
+            }
+            fn create(&self, _s: &str, _m: &Manifest<'_>, _store: &BlobStore) -> Result<String, CreateError> {
+                Err(CreateError::MissingContent(vec!["deadbeef".into()]))
             }
             fn collect(&self, _s: &str, _e: &str) -> io::Result<()> {
                 Ok(())
@@ -593,7 +478,7 @@ mod tests {
             fn destroy(&self, _s: &str) {}
         }
         let req = Request::Create { rid: 4, sandbox_id: "sbx".into(), manifest_bytes: vec![] };
-        match handle(&MissBackend, req, &BlobStore::new()).reply {
+        match handle(&MissBackend, req, &Arc::new(BlobStore::new())).reply {
             Reply::Create(CreateReply::MissingContent(h)) => assert_eq!(h, vec!["deadbeef".to_string()]),
             other => panic!("expected MissingContent, got {other:?}"),
         }
@@ -615,16 +500,9 @@ mod tests {
     }
 
     #[test]
-    fn metrics_gate_off_without_prefix_even_when_armed() {
-        std::env::remove_var("sandboxfs_metrics");
-        let gate = MetricsGate::start("ws", Arc::new(StubBackend), "cfs", &["--metrics".to_string()]);
-        assert!(gate.stop.is_none(), "no metrics prefix means no kdebug attribution, so no point arming");
-    }
-
-    #[test]
     fn metrics_gate_off_without_env_or_option() {
         std::env::remove_var("sandboxfs_metrics");
-        let gate = MetricsGate::start("ws", Arc::new(ObservedBackend), "cfs", &[]);
+        let gate = MetricsGate::start("ws", Arc::new(StubBackend), &Options::default());
         assert!(gate.stop.is_none());
     }
 
@@ -632,7 +510,7 @@ mod tests {
     fn metrics_gate_armed_by_metrics_backend_arg() {
         // The --sandbox_backend_arg=<name>=--metrics path: relayed via Negotiate.options, no env var.
         std::env::remove_var("sandboxfs_metrics");
-        let gate = MetricsGate::start("ws", Arc::new(ObservedBackend), "cfs", &["--metrics".to_string()]);
+        let gate = MetricsGate::start("ws", Arc::new(StubBackend), &Options { metrics: true, ..Options::default() });
         assert!(gate.stop.is_some());
         gate.finish();
     }

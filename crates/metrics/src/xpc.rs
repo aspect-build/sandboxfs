@@ -102,8 +102,7 @@ pub fn serve() -> ! {
     }
 }
 
-// Listener handler: each event is a freshly-accepted peer connection. Give it a
-// message handler and resume it.
+// Listener handler: each event is a freshly-accepted peer connection.
 extern "C" fn on_new_peer(_b: *mut Block, peer: XObj) {
     if is_error(peer) {
         return;
@@ -156,8 +155,8 @@ extern "C" fn on_message(_b: *mut Block, event: XObj) {
 /// forever, which must never stall a build. So the blocking call runs on a worker
 /// thread we abandon on timeout — the hung thread lingers harmlessly until the
 /// process exits.
-// ponytail: thread+timeout instead of an async reply block + dispatch semaphore;
-// switch to the latter only if a leaked thread per downed-daemon call ever matters.
+// A thread we abandon beats an async reply block plus semaphore unless a leaked thread per
+// downed-daemon call starts to matter.
 pub fn call(method: &str, build_id: &str, clone_prefix: &str, payload: &str) -> Result<Option<String>, String> {
     let (method, build_id, clone_prefix, payload) =
         (method.to_string(), build_id.to_string(), clone_prefix.to_string(), payload.to_string());

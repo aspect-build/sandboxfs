@@ -6,14 +6,13 @@
 // swap the dependency over to the git source (see packaging/package.sh); this `open` mirrors the
 // real crate's, and refusing here is what a build that did not swap reports at runtime.
 
-use backend::Backend;
+use backend::{Backend, Options};
 use std::io;
-use std::path::Path;
 use std::sync::Arc;
 
-pub fn open(_base: &Path, _ns: &str, _workspace: &str) -> io::Result<Arc<dyn Backend>> {
+pub fn open(_workspace: &str, _options: &Options) -> io::Result<Arc<dyn Backend>> {
     Err(io::Error::new(
         io::ErrorKind::Unsupported,
-        "this build carries no cfs backend; build a release (packaging/package.sh) or use --backend lazyfs",
+        "this build carries no cfs backend; build a release (packaging/package.sh)",
     ))
 }

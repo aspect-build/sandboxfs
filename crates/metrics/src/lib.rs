@@ -52,11 +52,6 @@ struct Ctrl {
     laydown_us: u64,
     files: u64,
     dirs: u64,
-    /// Wholesale-dir clones by cause (REAPI node_properties marker vs explicit locations
-    /// override) — see backend::stats::WHOLE_DIR_*.
-    wholesale_treeartifact: u64,
-    wholesale_sourcedir: u64,
-    wholesale_explicit: u64,
     mnemonics: Vec<(String, u64, u64, u64)>, // (name, creates, laydown_us, max_us)
 }
 
@@ -74,12 +69,6 @@ impl Ctrl {
                 c.files = v.parse().unwrap_or(0);
             } else if let Some(v) = line.strip_prefix("dirs=") {
                 c.dirs = v.parse().unwrap_or(0);
-            } else if let Some(v) = line.strip_prefix("wholesale_treeartifact=") {
-                c.wholesale_treeartifact = v.parse().unwrap_or(0);
-            } else if let Some(v) = line.strip_prefix("wholesale_sourcedir=") {
-                c.wholesale_sourcedir = v.parse().unwrap_or(0);
-            } else if let Some(v) = line.strip_prefix("wholesale_explicit=") {
-                c.wholesale_explicit = v.parse().unwrap_or(0);
             } else if let Some(v) = line.strip_prefix("m=") {
                 // "<name>:<creates>:<laydown_us>:<max_us>" — mnemonic names carry no ':'.
                 let mut it = v.rsplitn(4, ':');
@@ -467,17 +456,6 @@ pub fn client(method: &str, build_id: &str, clone_prefix: &str, payload: &str) -
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn ctrl_parse_captures_wholesale_dir_breakdown() {
-        let c = Ctrl::parse(
-            "backend=cfs\ncreates=5\nlaydown_us=2500\nfiles=40\ndirs=6\n\
-             wholesale_treeartifact=3\nwholesale_sourcedir=1\nwholesale_explicit=0\n",
-        );
-        assert_eq!(c.wholesale_treeartifact, 3);
-        assert_eq!(c.wholesale_sourcedir, 1);
-        assert_eq!(c.wholesale_explicit, 0);
-    }
 
     #[test]
     fn feed_carries_totals_samples_creates_and_spans() {
