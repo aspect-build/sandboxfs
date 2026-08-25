@@ -109,6 +109,14 @@ build() {
     trap restore_cfs_dep EXIT
     sed -i '' 's|^cfs = { path = "../cfs" }$|cfs = { git = "ssh://git@github.com/aspect-build/cfs.git", branch = "main" }|' "$CFS_MANIFEST"
     grep -q '^cfs = { git = ' "$CFS_MANIFEST" || die "could not point the cfs dependency at its git source"
+    # A path override (cargo's `paths`, e.g. from a .cargo/config.toml in a parent directory)
+    # outranks the manifest and would quietly build whatever is in a local checkout. Confirm what
+    # actually resolved, so a release can only ever carry published code.
+    cfs_src="$(cargo tree -p sandboxd -e normal 2>/dev/null | grep -m1 'cfs v')"
+    case "$cfs_src" in
+        *"aspect-build/cfs.git"*) ;;
+        *) die "cfs resolved to '${cfs_src:-nothing}', not its git source — a local path override would ship unpublished code" ;;
+    esac
 
     # cargo can't emit a fat binary directly, so build both slices and lipo them — the
     # app+appex archive is already x86_64+arm64, and a host-arch-only CLI would leave the

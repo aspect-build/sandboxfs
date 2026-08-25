@@ -23,10 +23,7 @@ pub enum CreateOutcome {
     MissingContent(Vec<String>),
 }
 
-/// A sandbox projection backend. `create` materializes a manifest's input tree (resolved against
-/// the session blob `store`) and returns the path Bazel runs the action in; `collect` harvests the
-/// action's declared outputs to `exec_root`; `destroy` releases the sandbox. Shared across the
-/// daemon's worker threads, so `&self` + `Send + Sync`.
+/// A sandbox backend
 pub trait Backend: Send + Sync {
     /// One-time setup after open, before serving. Default: nothing.
     fn start(&self) {}
