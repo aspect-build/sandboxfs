@@ -6,3 +6,4 @@ bazel-*
 target
 __pycache__
 .work
+.cargo

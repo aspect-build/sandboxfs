@@ -92,6 +92,9 @@ build() {
         >"$WORK/build-app.log" 2>&1 || { tail -40 "$WORK/build-app.log"; die "app archive failed"; }
 
     say "building sandboxfs CLI (universal) via cargo…"
+    # Both backends live in private repos, and cargo's built-in ssh cannot authenticate to them.
+    # Set here rather than in .cargo/config.toml, which is gitignored for the local dev loop.
+    export CARGO_NET_GIT_FETCH_WITH_CLI=true
     # The Rust controller (crates/sandboxd, bin `sandboxfs`). The projection backend is
     # developed in its own repository, and the workspace builds against the in-tree stand-in
     # (crates/backend-cfs) so an ordinary build needs no access to it — a cargo feature could not do
