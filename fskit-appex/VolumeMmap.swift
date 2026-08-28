@@ -21,45 +21,14 @@ final class VolumeMmap: FSVolume {
     let logger = Logger(subsystem: "sandboxfs", category: "Volume")
     let counters = OpCounters()
 
-    let root: SandboxFSItem = {
-        let item = SandboxFSItem(name: FSFileName(string: "/"))
-        item.attributes.parentID = .parentOfRoot
-        item.attributes.fileID = .rootDirectory
-        item.attributes.uid = 0
-        item.attributes.gid = 0
-        item.attributes.linkCount = 1
-        item.attributes.type = .directory
-        item.attributes.mode = UInt32(S_IFDIR | 0b111_000_000)
-        item.attributes.allocSize = 1
-        item.attributes.size = 1
-        return item
-    }()
+    let root = VirtualRoot.makeRoot()
+    let virtualRoot = VirtualRoot()
 
-    let version: SandboxFSItem = {
-        let item = SandboxFSItem(name: FSFileName(string: "sandboxfs_version"))
-        item.attributes.type = .file
-        item.data = "0.0.0".data(using: .utf8)
-        item.attributes.size = 5
-        item.attributes.allocSize = 5
-        item.attributes.mode = UInt32(S_IFREG | 0b111_000_000)
-        return item
-    }()
-
-    let counter = SandboxFSItem(name: FSFileName(string: "sandboxfs_perf"))
-
-    /// `<root>/.metadata_never_index` — Spotlight's opt-out sentinel: mds skips
-    /// indexing a volume whose root carries this (empty) file. `nobrowse` only
-    /// *discourages* the service swarm; this turns indexing off at the source.
-    /// (Profiling showed mds/XprotectService hammering the single fskitd→appex
-    /// broker that also serves the action's page-faults.)
-    let noIndex = SandboxFSItem(name: FSFileName(string: ".metadata_never_index"))
-
-    /// `<root>/.fseventsd/no_log` — fseventsd's opt-out: with `no_log` present in
-    /// the root `.fseventsd` directory, fseventsd doesn't journal events for the
-    /// volume (it spiked to 156% CPU during sandboxfs builds — every morph edit is
-    /// an event). Also pre-owning `.fseventsd` stops fseventsd from trying to
-    /// create it on a (sealed, EROFS) mount.
-    let fseventsd = SandboxFSItem(name: FSFileName(string: ".fseventsd"))
+    /// Covers the root's child set: sandboxes are built and evicted concurrently.
+    private let rootLock = NSLock()
+    /// Looking this up (plus a sandbox id) evicts that sandbox — a lookup is the only VNOP a
+    /// controller can issue against a read-only mount without a file to write to.
+    private static let evictSentinel = "sandboxfs_evict_"
 
     private var lastAppliedId: String?
     private var reconfigureSeq = 0
@@ -149,47 +118,7 @@ final class VolumeMmap: FSVolume {
             volumeID: FSVolume.Identifier(uuid: UUID()),
             volumeName: FSFileName(string: "sandboxfs")
         )
-        self.root.addItem(self.version)
-
-        // Virtual debug file: `cat /mnt/sandboxfs_perf` returns current op counts.
-        counter.attributes.type = .file
-        counter.attributes.mode = UInt32(S_IFREG | 0b100_100_100)
-        // Fixed advertised size + space-pad to it (same dance as reconf): on FSKit V3 the
-        // F_NOCACHE counter read clamps to this size, and served-length MUST equal it
-        // or a short-read-before-EOF is delivered as 0. The TSV parser ignores the
-        // trailing spaces.
-        counter.attributes.size = UInt64(64 * 1024)
-        counter.attributes.allocSize = UInt64(64 * 1024)
-        counter.dataProvider = { [weak self] in
-            guard let self else { return Data() }
-            var d = self.counters.renderText()
-            let fixed = 64 * 1024
-            if d.count < fixed { d.append(Data(repeating: 0x20, count: fixed - d.count)) }
-            return d
-        }
-        self.root.addItem(counter)
-
-        // Spotlight opt-out sentinel (empty, read-only).
-        noIndex.attributes.type = .file
-        noIndex.attributes.mode = UInt32(S_IFREG | 0o444)
-        noIndex.attributes.size = 0
-        noIndex.attributes.allocSize = 0
-        self.root.addItem(noIndex)
-
-        // fseventsd opt-out: a pre-owned `.fseventsd` dir holding an empty `no_log`.
-        fseventsd.attributes.type = .directory
-        fseventsd.attributes.mode = UInt32(S_IFDIR | 0o755)
-        fseventsd.attributes.uid = 501
-        fseventsd.attributes.gid = 20
-        let noLog = SandboxFSItem(name: FSFileName(string: "no_log"))
-        noLog.attributes.type = .file
-        noLog.attributes.mode = UInt32(S_IFREG | 0o444)
-        noLog.attributes.size = 0
-        noLog.attributes.allocSize = 0
-        fseventsd.replaceChildren(with: [noLog])
-        fseventsd.attributes.size = 64
-        fseventsd.attributes.allocSize = 4096
-        self.root.addItem(fseventsd)
+        virtualRoot.install(under: root, counters: counters)
     }
 }
 
@@ -261,7 +190,6 @@ extension VolumeMmap: FSVolume.Handler {
         if let rd = ProtoWire.peekRootDigest(data), !rd.isEmpty,
            let cached = treeCache[rd],
            var m = ProtoWire.decodeManifest(data, skipRoot: true) {
-            counters.bump("treeCacheHit")
             // LRU: refresh recency on hit.
             if let i = treeCacheOrder.firstIndex(of: rd) {
                 treeCacheOrder.remove(at: i)
@@ -270,7 +198,6 @@ extension VolumeMmap: FSVolume.Handler {
             m.root = cached
             return m
         }
-        counters.bump("treeCacheMiss")
         guard let m = ProtoWire.decodeManifest(data) else { return nil }
         if let r = m.root, !r.digest.isEmpty {
             if treeCache[r.digest] == nil {
@@ -329,7 +256,7 @@ extension VolumeMmap: FSVolume.Handler {
         // Only FILE outputs get hide-until-written. Writable_dirs are directories the
         // action writes INTO (e.g. TEST_TMPDIR) — they must stay visible, or the action
         // can't enter/create in them (was: tests failing `mkdir _tmp: Read-only`).
-        child.isProjectedOutput = ("\(kind)" == "output")
+        child.projected = ("\(kind)" == "output")
         parent.addItem(child)
     }
 
@@ -391,16 +318,12 @@ extension VolumeMmap: FSVolume.Handler {
     }
 
     /// Materialize a manifest Directory into an FSItem subtree — always built
-    /// fresh. Stash RESTORES are NOT done here: the appex must never move a
-    /// kernel-known DIRECTORY to a new location appex-side — XNU updates a dir
-    /// vnode's identity (v_parent/v_name, what getcwd's path reconstruction
-    /// walks) only on rename(2), so an appex-side reattach leaves stash-flavored
-    /// identity and getcwd fails ENOENT inside the subtree (observed: node
-    /// uv_cwd crash). The CONTROLLER restores stashed subtrees with a kernel
-    /// rename out of `_stash` BEFORE the reconfigure; by the time this walk
-    /// runs, a restored dir is already in place and Merkle-skips. Files reuse
-    /// pooled instances via `makeFileItem` (files are never a cwd — fileID
-    /// rebinding without rename is safe for them).
+    /// fresh. A directory the kernel already knows is NEVER moved appex-side: XNU updates a
+    /// dir vnode's identity (v_parent/v_name, what getcwd's path reconstruction walks) only on
+    /// rename(2), so reattaching one here leaves stale identity and getcwd fails ENOENT inside
+    /// the subtree (observed: node uv_cwd crash). Only the controller relocates a directory, by
+    /// rename. Files reuse pooled instances via `makeFileItem` — a file is never a cwd, so
+    /// rebinding its fileID without a rename is safe.
     private func materializeDir(_ d: ManifestDir) -> SandboxFSItem {
         let item = SandboxFSItem(name: FSFileName(string: d.name))
         item.digest = d.digest
@@ -488,12 +411,11 @@ extension VolumeMmap: FSVolume.Handler {
 
     /// The fixed root items every projection carries alongside the manifest tree:
     /// the virtual files plus the Spotlight/fseventsd opt-out sentinels.
-    private var virtualRootItems: [SandboxFSItem] { [version, counter, noIndex, fseventsd] }
 
     /// True when root holds only the virtual items — the cold-mount state where a
     /// full build (rather than a controller-morphed delta) is warranted.
     private func inputTreeIsEmpty() -> Bool {
-        for child in root.sortedChildren where !virtualRootItems.contains(where: { $0 === child }) {
+        for child in root.sortedChildren where !(child is GeneratedItem) {
             return false
         }
         return true
@@ -519,7 +441,7 @@ extension VolumeMmap: FSVolume.Handler {
     /// mount (when the tree is empty); later reconfigures reconcile the existing
     /// tree in place, so unchanged paths are never touched and stay warm (§4.1).
     private func buildFullTree(_ manifest: Manifest) {
-        var top: [SandboxFSItem] = virtualRootItems
+        var top: [SandboxFSItem] = virtualRoot.items
         if let r = manifest.root {
             for f in r.files ?? [] { top.append(materializeFile(f)) }
             for d in r.directories ?? [] { top.append(materializeDir(d)) }
@@ -540,13 +462,12 @@ extension VolumeMmap: FSVolume.Handler {
     /// Converge the live graph to `manifest` appex-side — the construction half of
     /// the frontier-morph protocol. The controller has already issued the kernel
     /// INVALIDATION syscalls (unlink for changed/removed files+symlinks, one rename
-    /// into `_stash/<digest>` per topmost removed dir), so every name this walk adds
+    /// and the removal of each topmost removed dir), so every name this walk adds
     /// is either freshly purged or never existed. The walk:
     ///   • Merkle-skips dirs whose stored digest equals the manifest's (the whole
     ///     subtree is byte-identical — untouched, fully warm).
     ///   • Recurses into dirs whose digest changed.
-    ///   • ADDS missing children: dirs restored whole from the stash on an exact
-    ///     digest hit, else built fresh; files reattached from the file pool by
+    ///   • ADDS missing children: dirs built fresh; files reattached from the file pool by
     ///     digest, else CAS-bound fresh.
     ///   • NEVER detaches or replaces an existing conflicting child appex-side —
     ///     the kernel may hold a warm namecache entry for it, and only a
@@ -622,7 +543,7 @@ extension VolumeMmap: FSVolume.Handler {
             item.attributes.mode = UInt32(S_IFLNK | 0o777)
             item.attributes.size = UInt64(link.data.count)
             item.linkname = link
-            item.isProjectedOutput = fileOutputKeys.contains(rel)
+            item.projected = fileOutputKeys.contains(rel)
             let risky = parent.addIsRisky(leaf)
             parent.addItem(item)
             if !parentIsFresh && risky { touch.append(comps.dropLast().joined(separator: "/")) }
@@ -666,7 +587,6 @@ extension VolumeMmap: FSVolume.Handler {
             toAdd.append(materializeSymlink(s))
         }
         for sub in d.directories ?? [] {
-            if isRoot && sub.name == "_stash" { continue }
             desired.insert(sub.name)
             let r = rel(sub.name)
             if let existing = item.children[sub.name] {
@@ -701,7 +621,7 @@ extension VolumeMmap: FSVolume.Handler {
         for child in item.sortedChildren {
             let name = child.name.string ?? ""
             if desired.contains(name) { continue }
-            if isRoot, name == "_stash" || virtualRootItems.contains(where: { $0 === child }) { continue }
+            if isRoot, child is GeneratedItem { continue }
             if name.hasPrefix("._") || name == ".DS_Store" { continue }
             let r = rel(name)
             if protectedPaths.contains(r) { continue }
@@ -718,8 +638,8 @@ extension VolumeMmap: FSVolume.Handler {
     ///   • RECONCILE (a reused slot on a persistent mount): converge the existing
     ///     graph to the manifest appex-side (see `reconcileTree`). The controller
     ///     has ALREADY issued the kernel invalidation syscalls (unlink per
-    ///     changed/removed file, one rename into `_stash/<digest>` per topmost
-    ///     removed dir) BEFORE this reconfigure, so every name the reconcile adds is
+    ///     changed/removed file, and the removal of each topmost removed dir) BEFORE
+    ///     this reconfigure, so every name the reconcile adds is
     ///     freshly purged or never existed. Unchanged subtrees are Merkle-skipped —
     ///     never touched, namecache + attr cache + UBC stay warm.
     ///
@@ -774,22 +694,99 @@ extension VolumeMmap: FSVolume.Handler {
     }
 
     func activate(options: FSTaskOptions) async throws -> FSActivateResult {
-        counters.bump("activate")
-        loadManifest(fullBuild: true)   // cold-build the whole tree from the resource URL
+        counters.bump(.activate)
         return FSActivateResult(rootItem: root)!
     }
 
-    /// (Re)read the manifest from the resource URL and apply it. `fullBuild: true`
-    /// cold-builds the whole tree (activate); `false` reconciles the live tree in place,
-    /// keeping unchanged subtrees warm — the `sandboxfs_refresh*` lookup trigger.
-    private func loadManifest(fullBuild: Bool) {
-        guard let data = FileManager.default.contents(atPath: resource.url.path),
-              var m = parseManifest(data) else {
-            logger.error("manifest unreadable at \(self.resource.url.path, privacy: .public)")
-            return
+    /// The FSKit on this OS calls `activateVolumeWithOptions:` / `deactivateVolumeWithOptions:`,
+    /// which the SDK we build against does not declare — its `FSVolume.Handler` still spells them
+    /// `activateWithOptions:` / `deactivateWithOptions:`. Both names reach the same code, so the
+    /// volume activates whichever the running framework asks for. (Confirmed against the runtime's
+    /// own BridgeSupport: same reply-block shape, `(result, error)`.)
+    @objc(activateVolumeWithOptions:replyHandler:)
+    func activateVolume(options: FSTaskOptions, replyHandler: @escaping (FSActivateResult?, Error?) -> Void) {
+        counters.bump(.activate)
+        replyHandler(FSActivateResult(rootItem: root), nil)
+    }
+
+    @objc(deactivateVolumeWithOptions:replyHandler:)
+    func deactivateVolume(options: FSDeactivateOptions, replyHandler: @escaping (Error?) -> Void) {
+        Task { [weak self] in
+            try? await self?.deactivate(options: options)
+            replyHandler(nil)
         }
-        m.fullBuild = fullBuild
-        applyManifest(m)
+    }
+
+    /// One mount serves every sandbox of a workspace: `<mount>/<id>` is built the first time
+    /// anything looks it up, out of `<resource>/<id>.pb`, and dropped when the controller looks
+    /// up `sandboxfs_evict_<id>` at destroy. So the FSKit mount is paid once per workspace
+    /// rather than once per action, and an action's tree costs nothing until it is touched.
+    ///
+    /// Actions run concurrently against the one mount, so unlike the single-manifest volume
+    /// this is NOT quiesced: `rootLock` covers every mutation of the root's child set.
+    /// Resolve a sandbox id to its subroot, building it on first touch. Holds `rootLock` across
+    /// the whole thing, hit included: several actions are created and torn down at once, so an
+    /// unsynchronized read of the root's child set races an insert.
+    private func sandboxRoot(_ id: String) -> SandboxFSItem? {
+        rootLock.lock()
+        defer { rootLock.unlock() }
+        if let live = root.children[id] { return live }
+        let path = resource.url.appendingPathComponent(id + ".pb").path
+        guard let data = FileManager.default.contents(atPath: path) else { return nil }
+        guard var m = parseManifest(data) else {
+            logger.error("manifest unparseable at \(path, privacy: .public)")
+            return nil
+        }
+        m.id = id
+        let item = buildSandbox(m, named: id)
+        root.addItem(item)
+        logger.debug("built sandbox \(id, privacy: .public) (\(item.children.count, privacy: .public) top-level)")
+        return item
+    }
+
+    /// Drop a sandbox's subtree. The controller does this at destroy, before it deletes the
+    /// manifest, so a long build doesn't accumulate every action's tree. Items the kernel still
+    /// holds vnodes for stay alive until it reclaims them — `deinit` unmaps then.
+    private func evictSandbox(_ id: String) {
+        rootLock.lock()
+        defer { rootLock.unlock() }
+        guard let item = root.children[id] else { return }
+        root.removeItem(item)
+        var stack: [SandboxFSItem] = [item]
+        while let it = stack.popLast() {
+            if let dg = it.digest, it.attributes.type == .file, let e = casIndex[dg] {
+                e.linkCount -= 1
+                if e.linkCount <= 0 { casIndex[dg] = nil }
+            }
+            stack.append(contentsOf: it.children.values)
+        }
+        logger.debug("evicted sandbox \(id, privacy: .public)")
+    }
+
+    /// The sandbox's own root: its input tree, plus a symlink per declared output and writable
+    /// dir pointing at the host scratch target the action writes through to.
+    private func buildSandbox(_ manifest: Manifest, named id: String) -> SandboxFSItem {
+        let item = SandboxFSItem(name: FSFileName(string: id))
+        item.attributes.type = .directory
+        item.attributes.mode = UInt32(S_IFDIR | 0o755)
+        item.attributes.uid = 501
+        item.attributes.gid = 20
+        var kids: [SandboxFSItem] = []
+        if let r = manifest.root {
+            for f in r.files ?? [] { kids.append(materializeFile(f)) }
+            for d in r.directories ?? [] { kids.append(materializeDir(d)) }
+            for s in r.symlinks ?? [] { kids.append(materializeSymlink(s)) }
+        }
+        item.replaceChildren(with: kids)
+        for (path, target) in manifest.outputs ?? [:] {
+            addSymlink(sandboxPath: path, target: target, under: item, kind: "output")
+        }
+        for (path, target) in manifest.writableDirs ?? [:] {
+            addSymlink(sandboxPath: path, target: target, under: item, kind: "writable_dir")
+        }
+        item.digest = manifest.root?.digest
+        setDirSize(item)
+        return item
     }
 
     func deactivate(options: FSDeactivateOptions = []) async throws {
@@ -809,21 +806,21 @@ extension VolumeMmap: FSVolume.Handler {
     func unmount() async {
         let snapshot = counters.snapshotAndReset()
         logger.notice("=== sandboxfs op counts ===")
-        for (name, count) in snapshot {
-            logger.notice("  \(name, privacy: .public): \(count)")
+        for (op, count) in snapshot {
+            logger.notice("  \(op.rawValue, privacy: .public): \(count)")
         }
     }
 
     func synchronize(flags: FSSyncFlags) async throws {}
 
     func attributes(_ desiredAttributes: FSItem.GetAttributesRequest, of item: FSItem, context: FSContext) async throws -> FSGetAttributesResult {
-        counters.bump("attributes")
+        counters.bump(.attributes)
         guard let item = item as? SandboxFSItem else {
             throw fs_errorForPOSIXError(POSIXError.EIO.rawValue)
         }
         // Virtual files: refresh size and bump mtime so the kernel buffer cache (keyed
         // by size+mtime) treats every stat as a new revision.
-        if let provider = item.dataProvider {
+        if let provider = (item as? GeneratedItem)?.render {
             // Size MUST equal the served length (dataProvider pads control responses to
             // a constant size — see init). A size > served length makes the F_NOCACHE
             // read a short-read-before-EOF, delivered to the controller as 0.
@@ -839,20 +836,12 @@ extension VolumeMmap: FSVolume.Handler {
     }
 
     func setAttributes(_ newAttributes: FSItem.SetAttributesRequest, on item: FSItem, context: FSContext) async throws -> FSSetAttributesResult {
-        counters.bump("setAttributes")
+        counters.bump(.setAttributes)
         throw fs_errorForPOSIXError(POSIXError.EROFS.rawValue)   // read-only mount
     }
 
     func lookupItem(named name: FSFileName, in directory: FSItem, context: FSContext) async throws -> FSLookupItemResult {
-        counters.bump("lookupItem")
-        // Reconfigure trigger: a lookup of `sandboxfs_refresh<nonce>` makes the appex
-        // re-read its manifest from the resource URL and reconcile the live tree in
-        // place. The nonce keeps each trigger a distinct name so the kernel's negative
-        // cache never serves it without reaching us. Never a real entry → ENOENT.
-        if name.string?.hasPrefix("sandboxfs_refresh") == true {
-            loadManifest(fullBuild: false)
-            throw fs_errorForPOSIXError(POSIXError.ENOENT.rawValue)
-        }
+        counters.bump(.lookupItem)
         guard let directory = directory as? SandboxFSItem else {
             throw fs_errorForPOSIXError(POSIXError.ENOENT.rawValue)
         }
@@ -863,16 +852,30 @@ extension VolumeMmap: FSVolume.Handler {
         guard let key = name.string else {
             throw fs_errorForPOSIXError(POSIXError.ENOENT.rawValue)
         }
+        // The root resolves sandbox ids: building one on first touch is what makes the
+        // projection lazy, and the evict sentinel is how the controller tears one down.
+        if directory === root {
+            if let id = key.dropPrefixIfPresent(Self.evictSentinel) {
+                evictSandbox(id)
+                throw fs_errorForPOSIXError(POSIXError.ENOENT.rawValue)
+            }
+            guard let item = sandboxRoot(key) else {
+                throw fs_errorForPOSIXError(POSIXError.ENOENT.rawValue)
+            }
+            return FSLookupItemResult(foundItem: item, itemName: name, itemAttributes: item.attributes)!
+        }
         guard let item = directory.children[key] else {
             throw fs_errorForPOSIXError(POSIXError.ENOENT.rawValue)
         }
         return FSLookupItemResult(foundItem: item, itemName: name, itemAttributes: item.attributes)!
     }
 
-    func reclaimItem(_ item: FSItem) async throws { counters.bump("reclaimItem") }
+    func reclaimItem(_ item: FSItem) async throws {
+        if !(item is GeneratedItem) { counters.bump(.reclaimItem) }
+    }
 
     func readSymbolicLink(_ item: FSItem, context: FSContext) async throws -> FSReadSymlinkResult {
-        counters.bump("readSymbolicLink")
+        counters.bump(.readSymbolicLink)
         guard let item = item as? SandboxFSItem, item.attributes.type == .symlink, let link = item.linkname else {
             throw fs_errorForPOSIXError(POSIXError.ENOLINK.rawValue)
         }
@@ -880,12 +883,12 @@ extension VolumeMmap: FSVolume.Handler {
     }
 
     func createItem(named name: FSFileName, type: FSItem.ItemType, in directory: FSItem, attributes newAttributes: FSItem.SetAttributesRequest, context: FSContext) async throws -> FSCreateItemResult {
-        counters.bump("createItem")
+        counters.bump(.createItem)
         throw fs_errorForPOSIXError(POSIXError.EROFS.rawValue)   // read-only mount
     }
 
     func createSymbolicLink(named name: FSFileName, in directory: FSItem, attributes newAttributes: FSItem.SetAttributesRequest, linkContents contents: FSFileName, context: FSContext) async throws -> FSCreateSymlinkResult {
-        counters.bump("createSymbolicLink")
+        counters.bump(.createSymbolicLink)
         throw fs_errorForPOSIXError(POSIXError.EROFS.rawValue)   // read-only mount
     }
 
@@ -894,24 +897,27 @@ extension VolumeMmap: FSVolume.Handler {
     /// §2) and backing, and bump the CAS link count so the blob survives until the
     /// last name is removed. supportsHardLinks must be true for the kernel to call us.
     func createLink(to item: FSItem, named name: FSFileName, in directory: FSItem, context: FSContext) async throws -> FSCreateLinkResult {
-        counters.bump("createLink")
+        counters.bump(.createLink)
         throw fs_errorForPOSIXError(POSIXError.EROFS.rawValue)   // read-only mount
     }
 
     func removeItem(_ item: FSItem, named name: FSFileName, from directory: FSItem, context: FSContext) async throws -> FSRemoveItemResult {
-        counters.bump("removeItem")
+        counters.bump(.removeItem)
         throw fs_errorForPOSIXError(POSIXError.EROFS.rawValue)   // read-only mount
     }
 
     /// Move an item within the graph. Used if the controller morph (or an action)
     /// renames; the kernel rename path also purges the namecache for both names.
     func renameItem(_ item: FSItem, inDirectory sourceDirectory: FSItem, named sourceName: FSFileName, to destinationName: FSFileName, inDirectory destinationDirectory: FSItem, overItem: FSItem?, context: FSContext) async throws -> FSRenameItemResult {
-        counters.bump("renameItem")
+        counters.bump(.renameItem)
         throw fs_errorForPOSIXError(POSIXError.EROFS.rawValue)   // read-only mount
     }
 
     func enumerateDirectory(_ directory: FSItem, startingAt cookie: FSDirectoryCookie, verifier: FSDirectoryVerifier, attributes: FSItem.GetAttributesRequest?, packer: FSDirectoryEntryPacker, context: FSContext) async throws -> FSEnumerateDirectoryResult {
-        counters.bump("enumerateDirectory")
+        // Listing the mount root walks the same child set that creates and evictions mutate.
+        if directory === root { rootLock.lock() }
+        defer { if directory === root { rootLock.unlock() } }
+        counters.bump(.enumerateDirectory)
         guard let directory = directory as? SandboxFSItem else {
             throw fs_errorForPOSIXError(POSIXError.ENOENT.rawValue)
         }
@@ -927,7 +933,7 @@ extension VolumeMmap: FSVolume.Handler {
         // writable-dir targets exist (controller mkdir'd them) so they stay visible. Done
         // outside the morph lock — the snapshot array is already a copy.
         let entries = snapshot.filter { child in
-            guard child.isProjectedOutput, let target = child.linkname?.string else { return true }
+            guard child.projected, let target = child.linkname?.string else { return true }
             // The write-through scratch target is eager-created as an EMPTY placeholder
             // before the action runs (so tools like uutils `cp` can write through a
             // non-dangling symlink). So "exists" can't mean "written". Show a file output
@@ -1029,8 +1035,9 @@ extension VolumeMmap: FSVolume.Handler {
 // (see readBytes), it never depended on open(); (c) changed/removed-file kernel-cache
 // purge reverts to the controller morph (appexHandlesFiles=false in Pool.swift), the
 // V1-proven, lease-free path that reconcileTree already assumes (see applyManifest doc).
-// `wasOpened` is now never set → revokeFromCache no-ops (see below). To revert: restore
-// this extension and set appexHandlesFiles back to the macOS-27 gate.
+// Nothing marks an item as opened any more, so revokeFromCache no-ops (see below). To
+// revert: restore this extension, re-add the opened flag on SandboxFSItem, and set
+// appexHandlesFiles back to the macOS-27 gate.
 
 @available(macOS 27.0, *)
 extension VolumeMmap {
@@ -1121,7 +1128,7 @@ extension VolumeMmap: FSVolume.ReadWriteHandler {
     }
 
     private func readBytes(from item: FSItem, at offset: off_t, length: Int, into buffer: FSMutableFileDataBuffer) async throws -> Int {
-        counters.bump("read")
+        counters.bump(.read)
         guard let item = item as? SandboxFSItem else {
             throw fs_errorForPOSIXError(POSIXError.EIO.rawValue)
         }
@@ -1131,12 +1138,12 @@ extension VolumeMmap: FSVolume.ReadWriteHandler {
         // so refresh the advertised size to the served length here — otherwise the
         // kernel would see a stale size (0) and clamp the control-channel read-back
         // to 0 bytes (breaking the reconfigure handshake).
-        if let provider = item.dataProvider {
+        if let provider = (item as? GeneratedItem)?.render {
             let size = UInt64(provider().count)
             item.attributes.size = size
             item.attributes.allocSize = size
         }
-        let inMemory: Data? = item.dataProvider?() ?? item.data
+        let inMemory: Data? = (item as? GeneratedItem)?.render?() ?? item.data
         if let data = inMemory {
             let start = Int(offset)
             let available = max(0, data.count - start)
@@ -1175,7 +1182,7 @@ extension VolumeMmap: FSVolume.ReadWriteHandler {
                !item.madviseDemoted.exchange(true, ordering: .relaxed) {
                 madvise(mmap, item.mmapLen, MADV_NORMAL)
             }
-            counters.bump("readData")
+            counters.bump(.readData)
             _ = buffer.withUnsafeMutableBytes { dst in
                 memcpy(dst.baseAddress, mmap.advanced(by: start), n)
             }
@@ -1185,7 +1192,7 @@ extension VolumeMmap: FSVolume.ReadWriteHandler {
         // Fallback (mmap failed): pread through the retained fd.
         let requested = min(length, buffer.length)
         let fd = item.fileDescriptor
-        counters.bump("readData")
+        counters.bump(.readData)
         let n = buffer.withUnsafeMutableBytes { dst -> Int in
             pread(fd, dst.baseAddress, requested, offset)
         }
@@ -1204,7 +1211,7 @@ extension VolumeMmap: FSVolume.ReadWriteHandler {
     }
 
     private func writeBytes(contents: Data, to item: FSItem, at offset: off_t) async throws -> Int {
-        counters.bump("write")
+        counters.bump(.write)
         throw fs_errorForPOSIXError(POSIXError.EROFS.rawValue)   // read-only mount
     }
 }

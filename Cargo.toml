@@ -1,12 +1,9 @@
 [workspace]
 members = ["crates/*"]
-# backend-fskit is out of the build: it serves a single persistent appex mount, and the appex is
-# broken -- it still parses the pre-canonical manifest wire. Source stays for that rework.
-#
 # backend-cfs is a dependency but not a member, so a `paths` override (see DEVELOPING.md in the
 # cfs repo) can swap the stand-in for a real checkout without two packages of that name colliding
 # in one workspace.
-exclude = ["crates/backend-fskit", "crates/backend-cfs"]
+exclude = ["crates/backend-cfs"]
 resolver = "2"
 
 [profile.release]

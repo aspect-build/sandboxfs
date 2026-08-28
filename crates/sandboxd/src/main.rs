@@ -45,9 +45,9 @@ fn main() {
             }
         }
         _ => {
-            eprintln!("usage: sandboxfs serve [--workspace <path>] [--backend cfs]");
+            eprintln!("usage: sandboxfs serve [--workspace <path>] [--backend cfs|fskit]");
             eprintln!("       sandboxfs metrics <begin|end> <build_id>   (read: sandboxfs metrics feed)");
-            eprintln!("       backend also settable via env sandboxfs_backend (Bazel: --client_env=sandboxfs_backend=cfs)");
+            eprintln!("       backend also settable via env sandboxfs_backend (Bazel: --client_env=sandboxfs_backend=fskit)");
             std::process::exit(2);
         }
     }
@@ -58,12 +58,16 @@ fn flag(args: &[String], name: &str) -> Option<String> {
     args.get(i + 1).cloned()
 }
 
-/// Check the requested backend name. `--backend` flag wins, else the env knob, else the default.
-/// Case-insensitive. cfs is the only backend that builds today (see the workspace `exclude`).
-fn resolve(flag: Option<&str>, env: Option<&str>) -> io::Result<()> {
+/// Which backend to use. `--backend` flag wins, else the env knob, else the default.
+/// Case-insensitive.
+fn resolve(flag: Option<&str>, env: Option<&str>) -> io::Result<&'static str> {
     match flag.or(env).map(|s| s.to_ascii_lowercase()).as_deref() {
-        None | Some("cfs") => Ok(()),
-        Some(other) => Err(io::Error::new(io::ErrorKind::InvalidInput, format!("unknown backend {other:?} (expected: cfs)"))),
+        None | Some("cfs") => Ok("cfs"),
+        Some("fskit") => Ok("fskit"),
+        Some(other) => Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!("unknown backend {other:?} (expected: cfs, fskit)"),
+        )),
     }
 }
 
@@ -72,8 +76,10 @@ fn resolve(flag: Option<&str>, env: Option<&str>) -> io::Result<()> {
 /// its state lives on disk, and whether that placement is legal, is the backend's own business.
 fn select(flag: Option<&str>, workspace: &str, options: &Options) -> io::Result<Arc<dyn Backend>> {
     let env = std::env::var("sandboxfs_backend").or_else(|_| std::env::var("SANDBOXFS_BACKEND")).ok();
-    resolve(flag, env.as_deref())?;
-    backend_cfs::open(workspace, options)
+    match resolve(flag, env.as_deref())? {
+        "fskit" => backend_fskit::open(workspace, options),
+        _ => backend_cfs::open(workspace, options),
+    }
 }
 
 /// Spawns the worker pool that drains `queue` and writes framed replies (rid echoed, so
@@ -452,7 +458,9 @@ mod tests {
         assert!(resolve(None, None).is_ok(), "default backend");
         assert!(resolve(None, Some("CFS")).is_ok(), "env selects cfs, case-insensitively");
         assert!(resolve(Some("cfs"), Some("nope")).is_ok(), "flag wins over env");
-        assert!(resolve(None, Some("fskit")).is_err(), "fskit is not built today");
+        assert_eq!(resolve(None, Some("fskit")).unwrap(), "fskit", "env selects fskit");
+        assert_eq!(resolve(Some("fskit"), None).unwrap(), "fskit", "flag selects fskit");
+        assert!(resolve(Some("nope"), None).is_err(), "an unknown backend is refused");
     }
 
     struct StubBackend;
