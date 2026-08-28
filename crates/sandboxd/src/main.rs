@@ -185,27 +185,23 @@ fn serve(workspace: &str, backend_name: Option<&str>) {
             Some(Request::Push { blobs, content }) => {
                 let mut digests: Vec<String> = blobs.iter().map(|(h, _)| h.clone()).collect();
                 store.insert_dirs(blobs);
-                // A relative `location` is relative to the session exec root, and this is the only
-                // moment it means anything — resolve it before the backend ever sees it.
-                let er = store.exec_root().map(str::to_string);
-                let mut staged: Vec<(String, ContentSource)> = Vec::with_capacity(content.len());
-                for (digest, source) in content {
-                    digests.push(digest.clone());
-                    staged.push(match (source, &er) {
-                        (ContentSource::Location(host), Some(er)) if !host.starts_with('/') => {
-                            (digest, ContentSource::Location(format!("{er}/{host}")))
-                        }
-                        (source, _) => (digest, source),
-                    });
-                }
-                store.stage_content(staged);
+                digests.extend(content.iter().map(|(h, _)| h.clone()));
+                store.stage_content(resolve_locations(&store, content));
                 if let Some(b) = &backend_ref {
                     b.push(&store, &digests);
                 }
                 // Capture-on-receipt: whatever the backend did not take is not ours to read later.
                 store.clear_pending();
             }
-            Some(req) => queue.push(req),
+            // A Create is the only frame carrying the session exec root (field 2), and a relative
+            // `Push.content` location means nothing without it. Latch it here, on the way to the
+            // worker queue, so every later push resolves — the first push of a session precedes
+            // any Create, and the leaves it could not resolve are recovered through the
+            // MissingContent retry once a Create has been seen.
+            Some(req) => {
+                latch_exec_root(&store, &req);
+                queue.push(req)
+            }
             None => {}
         }
     }
@@ -309,6 +305,34 @@ impl MetricsGate {
             let _ = m.join();
         }
     }
+}
+
+/// Latch the session exec root off a Create (field 2), the only frame that carries it. Every
+/// relative `Push.content` location is resolved against it, so a push that arrives before any
+/// Create — which is how a session starts — cannot resolve one; those leaves are recovered when a
+/// dependent Create reports them as MissingContent and Bazel pushes them again.
+fn latch_exec_root(store: &BlobStore, req: &Request) {
+    if let Request::Create { manifest_bytes, .. } = req {
+        if let Some(er) = Manifest::new(manifest_bytes).exec_root() {
+            store.set_exec_root(er);
+        }
+    }
+}
+
+/// Make every leaf location absolute before the backend sees it. A `location` is relative to the
+/// session exec root, and the push is the only moment it means anything — the backend must capture
+/// the bytes now, so it cannot be handed a path it has no way to resolve.
+fn resolve_locations(store: &BlobStore, content: Vec<(String, ContentSource)>) -> Vec<(String, ContentSource)> {
+    let er = store.exec_root().map(str::to_string);
+    content
+        .into_iter()
+        .map(|(digest, source)| match (source, &er) {
+            (ContentSource::Location(host), Some(er)) if !host.starts_with('/') => {
+                (digest, ContentSource::Location(format!("{er}/{host}")))
+            }
+            (source, _) => (digest, source),
+        })
+        .collect()
 }
 
 fn handle(backend: &dyn Backend, req: Request, store: &Arc<BlobStore>) -> Response {
@@ -525,5 +549,40 @@ mod tests {
         let mut body = vec![0u8; len as usize];
         c.read_exact(&mut body).unwrap();
         assert_eq!(body, payload);
+    }
+
+    /// A `Push.content` location arrives relative to the session exec root, and the exec root only
+    /// ever arrives on a Create. Without the latch every relative location reached the backend
+    /// unresolved, every capture failed silently, and each affected leaf fell back to the
+    /// `exec_root/<tree path>` derivation — which for a runfiles entry cannot resolve, failing the
+    /// action with a bare ENOENT.
+    #[test]
+    fn a_create_latches_the_exec_root_so_relative_push_locations_resolve() {
+        use backend::wire::Writer;
+        let store = BlobStore::new();
+        let relative = || vec![("dg".to_string(), ContentSource::Location("_main/bazel-out/bin/pkg/tool.repo_mapping".into()))];
+
+        // Before any Create there is nothing to resolve against, and the location is left alone.
+        match resolve_locations(&store, relative()).pop().unwrap().1 {
+            ContentSource::Location(p) => assert_eq!(p, "_main/bazel-out/bin/pkg/tool.repo_mapping"),
+            other => panic!("expected a location, got {other:?}"),
+        }
+
+        let mut m = Writer::default();
+        m.str(2, "/exec/root"); // Manifest field 2
+        latch_exec_root(&store, &Request::Create { rid: 1, sandbox_id: "sbx".into(), manifest_bytes: m.out });
+        assert_eq!(store.exec_root(), Some("/exec/root"));
+
+        match resolve_locations(&store, relative()).pop().unwrap().1 {
+            ContentSource::Location(p) => assert_eq!(p, "/exec/root/_main/bazel-out/bin/pkg/tool.repo_mapping"),
+            other => panic!("expected a location, got {other:?}"),
+        }
+
+        // An absolute location is already meaningful and must not be rewritten.
+        let absolute = vec![("dg2".to_string(), ContentSource::Location("/somewhere/else".into()))];
+        match resolve_locations(&store, absolute).pop().unwrap().1 {
+            ContentSource::Location(p) => assert_eq!(p, "/somewhere/else"),
+            other => panic!("expected a location, got {other:?}"),
+        }
     }
 }
