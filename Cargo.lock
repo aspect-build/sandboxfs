@@ -25,6 +25,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "backend-hardlink"
+version = "0.1.0"
+dependencies = [
+ "backend",
+ "libc",
+]
+
+[[package]]
 name = "libc"
 version = "0.2.189"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -50,6 +58,7 @@ dependencies = [
  "backend",
  "backend-cfs",
  "backend-fskit",
+ "backend-hardlink",
  "libc",
  "metrics",
 ]

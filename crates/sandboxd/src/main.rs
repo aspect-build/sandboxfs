@@ -45,7 +45,7 @@ fn main() {
             }
         }
         _ => {
-            eprintln!("usage: sandboxfs serve [--workspace <path>] [--backend cfs|fskit]");
+            eprintln!("usage: sandboxfs serve [--workspace <path>] [--backend cfs|fskit|hardlink]");
             eprintln!("       sandboxfs metrics <begin|end> <build_id>   (read: sandboxfs metrics feed)");
             eprintln!("       backend also settable via env sandboxfs_backend (Bazel: --client_env=sandboxfs_backend=fskit)");
             std::process::exit(2);
@@ -64,9 +64,10 @@ fn resolve(flag: Option<&str>, env: Option<&str>) -> io::Result<&'static str> {
     match flag.or(env).map(|s| s.to_ascii_lowercase()).as_deref() {
         None | Some("cfs") => Ok("cfs"),
         Some("fskit") => Ok("fskit"),
+        Some("hardlink") => Ok("hardlink"),
         Some(other) => Err(io::Error::new(
             io::ErrorKind::InvalidInput,
-            format!("unknown backend {other:?} (expected: cfs, fskit)"),
+            format!("unknown backend {other:?} (expected: cfs, fskit, hardlink)"),
         )),
     }
 }
@@ -78,6 +79,7 @@ fn select(flag: Option<&str>, workspace: &str, options: &Options) -> io::Result<
     let env = std::env::var("sandboxfs_backend").or_else(|_| std::env::var("SANDBOXFS_BACKEND")).ok();
     match resolve(flag, env.as_deref())? {
         "fskit" => backend_fskit::open(workspace, options),
+        "hardlink" => backend_hardlink::open(workspace, options),
         _ => backend_cfs::open(workspace, options),
     }
 }

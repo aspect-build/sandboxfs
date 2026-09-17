@@ -1,0 +1,9 @@
+[package]
+name = "backend-hardlink"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+
+[dependencies]
+backend = { path = "../backend" }
+libc = "0.2"
