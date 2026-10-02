@@ -13,5 +13,6 @@ backend = { path = "../backend" }
 # Swapped to the git source for release builds; see packaging/package.sh.
 backend-cfs = { path = "../backend-cfs" }
 backend-fskit = { path = "../backend-fskit" }
+backend-hardlink = { path = "../backend-hardlink" }
 metrics = { path = "../metrics" }
 libc = "0.2"
