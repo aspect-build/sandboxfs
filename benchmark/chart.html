@@ -145,7 +145,7 @@ function render(){
   const m=DATA.machine;
   document.getElementById("note").innerHTML=
     `<b>Reading it.</b> readdir, getattrlistbulk, stat, open, read and page-fault latencies are per-call p50 over the whole
-     tree, each value the median of ${DATA.runs} full runs; execve is fork+exec+wait of a freshly built binary, cold meaning a never-validated code signature; laydown is
+     tree, each value the median of ${DATA.runs} full runs; execve is fork+exec+wait of a 16MB binary already run once on the host, so cold is the cost of validating the backend's inode (none when it shares the host's); laydown is
      the time to stage the whole tree. Cold here is <b>${DATA.cold}</b>. Where the solid end sits left of the hollow one,
      warm is faster; in the fskit readdir and getattrlistbulk rows the warm pass is slower than the first touch.
      fskit's mount costs ${DATA.fskit_mount_ms} ms once per workspace. ${m.cpu}, ${m.memory_gb} GB, macOS ${m.macos}, ${DATA.generated.slice(0,10)}.`;

@@ -1,5 +1,5 @@
 {
- "generated": "2026-10-05T12:26:07",
+ "generated": "2026-10-06T13:30:08",
  "machine": {
   "model": "Mac14,9",
   "cpu": "Apple M2 Pro",
@@ -8,7 +8,7 @@
   "power": "Now drawing from 'AC Power'"
  },
  "cold": "first touch after laydown (no purge)",
- "runs": 4,
+ "runs": 3,
  "backends": [
   "fskit",
   "copy",
@@ -23,151 +23,151 @@
   "link": "link()",
   "clonefile": "clonefile()"
  },
- "fskit_mount_ms": 86.1,
+ "fskit_mount_ms": 107.0,
  "payloads": {
   "manysmall": {
-   "files": 16093.0,
+   "files": 16093,
    "laydown_ms": {
     "fskit": {
-     "cold": 123.52,
-     "warm": 33.341
+     "cold": 137.429,
+     "warm": 34.92
     },
     "copy": {
-     "cold": 1503.436,
-     "warm": 1503.436
+     "cold": 1530.649,
+     "warm": 1530.649
     },
     "symlink": {
-     "cold": 831.574,
-     "warm": 831.574
+     "cold": 769.481,
+     "warm": 769.481
     },
     "link": {
-     "cold": 4400.825,
-     "warm": 4400.825
+     "cold": 4492.971,
+     "warm": 4492.971
     },
     "clonefile": {
-     "cold": 179.652,
-     "warm": 179.652
+     "cold": 182.03,
+     "warm": 182.03
     }
    },
    "exec_ms": {
     "fskit": {
-     "cold": 252.03,
-     "warm": 3.22
+     "cold": 151.29,
+     "warm": 3.86
     },
     "copy": {
-     "cold": 105.72,
-     "warm": 2.55
+     "cold": 134.3,
+     "warm": 3.37
     },
     "symlink": {
-     "cold": 139.27,
-     "warm": 2.48
+     "cold": 3.28,
+     "warm": 2.81
     },
     "link": {
-     "cold": 108.44,
-     "warm": 2.37
+     "cold": 75.46,
+     "warm": 3.0
     },
     "clonefile": {
-     "cold": 109.7,
-     "warm": 2.35
+     "cold": 115.19,
+     "warm": 3.27
     }
    },
    "ops_us": {
     "readdir": {
      "fskit": {
-      "cold": 107.9,
-      "warm": 334.5
+      "cold": 103.3,
+      "warm": 278.6
      },
      "copy": {
-      "cold": 4.8,
-      "warm": 4.5
+      "cold": 4.7,
+      "warm": 4.8
      },
      "symlink": {
-      "cold": 4.7,
-      "warm": 5.2
+      "cold": 4.6,
+      "warm": 4.8
      },
      "link": {
-      "cold": 4.7,
-      "warm": 5.4
+      "cold": 4.8,
+      "warm": 4.9
      },
      "clonefile": {
-      "cold": 5.0,
-      "warm": 4.7
+      "cold": 4.9,
+      "warm": 4.8
      }
     },
     "getattrlistbulk": {
      "fskit": {
-      "cold": 115.2,
-      "warm": 340.6
+      "cold": 112.6,
+      "warm": 306.3
      },
      "copy": {
-      "cold": 8.5,
-      "warm": 7.8
+      "cold": 8.2,
+      "warm": 8.3
      },
      "symlink": {
       "cold": 8.4,
-      "warm": 8.4
+      "warm": 8.1
      },
      "link": {
-      "cold": 8.5,
-      "warm": 8.4
+      "cold": 8.9,
+      "warm": 8.6
      },
      "clonefile": {
-      "cold": 13.4,
-      "warm": 8.4
+      "cold": 13.3,
+      "warm": 8.6
      }
     },
     "stat": {
      "fskit": {
-      "cold": 105.1,
-      "warm": 6.6
+      "cold": 110.8,
+      "warm": 4.5
      },
      "copy": {
-      "cold": 1.6,
-      "warm": 1.6
+      "cold": 1.7,
+      "warm": 1.5
      },
      "symlink": {
-      "cold": 5.4,
-      "warm": 4.8
+      "cold": 5.0,
+      "warm": 4.5
      },
      "link": {
-      "cold": 3.4,
-      "warm": 3.3
+      "cold": 3.2,
+      "warm": 3.1
      },
      "clonefile": {
-      "cold": 5.7,
-      "warm": 2.2
+      "cold": 5.8,
+      "warm": 2.1
      }
     },
     "open": {
      "fskit": {
-      "cold": 21.5,
-      "warm": 49.8
+      "cold": 22.1,
+      "warm": 42.9
      },
      "copy": {
-      "cold": 17.3,
-      "warm": 11.0
+      "cold": 17.7,
+      "warm": 12.9
      },
      "symlink": {
-      "cold": 20.3,
-      "warm": 19.4
+      "cold": 20.6,
+      "warm": 15.8
      },
      "link": {
-      "cold": 21.9,
-      "warm": 22.1
+      "cold": 22.0,
+      "warm": 21.9
      },
      "clonefile": {
-      "cold": 18.8,
-      "warm": 14.6
+      "cold": 18.9,
+      "warm": 13.0
      }
     },
     "read": {
      "fskit": {
-      "cold": 146.1,
-      "warm": 5.0
+      "cold": 138.2,
+      "warm": 3.3
      },
      "copy": {
       "cold": 1.4,
-      "warm": 1.3
+      "warm": 1.4
      },
      "symlink": {
       "cold": 1.4,
@@ -178,21 +178,21 @@
       "warm": 1.4
      },
      "clonefile": {
-      "cold": 15.9,
+      "cold": 19.0,
       "warm": 1.4
      }
     },
     "fault": {
      "fskit": {
       "cold": 1.0,
-      "warm": 1.9
+      "warm": 1.6
      },
      "copy": {
       "cold": 0.7,
       "warm": 0.7
      },
      "symlink": {
-      "cold": 0.7,
+      "cold": 0.8,
       "warm": 0.7
      },
      "link": {
@@ -208,415 +208,415 @@
    "e2e_ms": {
     "work_total": {
      "fskit": {
-      "cold": 5311.4,
-      "warm": 2639.6
+      "cold": 5399.0,
+      "warm": 2074.7
      },
      "copy": {
-      "cold": 336.4,
-      "warm": 311.6
+      "cold": 347.8,
+      "warm": 332.2
      },
      "symlink": {
-      "cold": 490.8,
-      "warm": 471.6
+      "cold": 482.8,
+      "warm": 429.5
      },
      "link": {
-      "cold": 492.1,
-      "warm": 499.0
+      "cold": 500.4,
+      "warm": 508.5
      },
      "clonefile": {
-      "cold": 1201.7,
-      "warm": 366.9
+      "cold": 957.3,
+      "warm": 356.2
      }
     },
     "find": {
      "fskit": {
-      "cold": 235.8,
-      "warm": 272.6
+      "cold": 219.5,
+      "warm": 254.8
      },
      "copy": {
-      "cold": 58.5,
-      "warm": 52.2
+      "cold": 54.7,
+      "warm": 57.9
      },
      "symlink": {
-      "cold": 118.3,
-      "warm": 125.8
+      "cold": 111.8,
+      "warm": 117.5
      },
      "link": {
-      "cold": 60.0,
-      "warm": 59.0
+      "cold": 57.4,
+      "warm": 57.2
      },
      "clonefile": {
-      "cold": 61.4,
-      "warm": 56.2
+      "cold": 54.3,
+      "warm": 55.6
      }
     },
     "grep": {
      "fskit": {
-      "cold": 825.5,
-      "warm": 799.5
+      "cold": 786.9,
+      "warm": 683.5
      },
      "copy": {
-      "cold": 398.0,
-      "warm": 364.0
+      "cold": 378.9,
+      "warm": 373.9
      },
      "symlink": {
-      "cold": 512.1,
-      "warm": 574.1
+      "cold": 499.7,
+      "warm": 515.1
      },
      "link": {
-      "cold": 557.7,
-      "warm": 526.6
+      "cold": 548.5,
+      "warm": 549.7
      },
      "clonefile": {
-      "cold": 438.0,
-      "warm": 402.9
+      "cold": 391.8,
+      "warm": 401.4
      }
     }
    }
   },
   "fewlarge": {
-   "files": 137.0,
+   "files": 137,
    "laydown_ms": {
     "fskit": {
-     "cold": 2.252,
-     "warm": 1.509
+     "cold": 2.751,
+     "warm": 1.758
     },
     "copy": {
-     "cold": 121.702,
-     "warm": 121.702
+     "cold": 94.852,
+     "warm": 94.852
     },
     "symlink": {
-     "cold": 8.884,
-     "warm": 8.884
+     "cold": 8.372,
+     "warm": 8.372
     },
     "link": {
-     "cold": 38.9,
-     "warm": 38.9
+     "cold": 39.74,
+     "warm": 39.74
     },
     "clonefile": {
-     "cold": 1.534,
-     "warm": 1.534
+     "cold": 1.634,
+     "warm": 1.634
     }
    },
    "exec_ms": {
     "fskit": {
-     "cold": 151.69,
-     "warm": 2.77
+     "cold": 193.0,
+     "warm": 4.22
     },
     "copy": {
-     "cold": 116.67,
-     "warm": 2.49
+     "cold": 112.03,
+     "warm": 3.4
     },
     "symlink": {
-     "cold": 110.9,
-     "warm": 2.57
+     "cold": 3.37,
+     "warm": 3.21
     },
     "link": {
-     "cold": 138.71,
-     "warm": 2.44
+     "cold": 73.6,
+     "warm": 3.16
     },
     "clonefile": {
-     "cold": 129.88,
-     "warm": 2.58
+     "cold": 145.13,
+     "warm": 3.54
     }
    },
    "ops_us": {
     "readdir": {
      "fskit": {
-      "cold": 252.7,
-      "warm": 480.2
+      "cold": 275.2,
+      "warm": 251.2
      },
      "copy": {
-      "cold": 4.3,
-      "warm": 4.1
+      "cold": 4.4,
+      "warm": 5.0
      },
      "symlink": {
-      "cold": 3.7,
-      "warm": 3.6
+      "cold": 4.2,
+      "warm": 4.4
      },
      "link": {
-      "cold": 3.6,
-      "warm": 3.6
+      "cold": 3.9,
+      "warm": 4.1
      },
      "clonefile": {
-      "cold": 4.6,
-      "warm": 4.0
+      "cold": 5.3,
+      "warm": 4.5
      }
     },
     "getattrlistbulk": {
      "fskit": {
-      "cold": 264.2,
-      "warm": 4.0
+      "cold": 314.8,
+      "warm": 3.6
      },
      "copy": {
-      "cold": 6.6,
-      "warm": 6.0
+      "cold": 7.1,
+      "warm": 6.6
      },
      "symlink": {
-      "cold": 8.2,
-      "warm": 5.3
+      "cold": 7.6,
+      "warm": 6.2
      },
      "link": {
-      "cold": 7.1,
-      "warm": 6.3
+      "cold": 6.8,
+      "warm": 7.1
      },
      "clonefile": {
-      "cold": 9.9,
-      "warm": 6.3
+      "cold": 11.9,
+      "warm": 6.6
      }
     },
     "stat": {
      "fskit": {
-      "cold": 292.2,
-      "warm": 2.5
+      "cold": 370.7,
+      "warm": 2.2
      },
      "copy": {
-      "cold": 2.0,
-      "warm": 2.0
+      "cold": 2.2,
+      "warm": 2.1
      },
      "symlink": {
       "cold": 6.6,
-      "warm": 6.0
+      "warm": 5.7
      },
      "link": {
       "cold": 4.5,
-      "warm": 4.3
+      "warm": 4.0
      },
      "clonefile": {
-      "cold": 6.9,
-      "warm": 2.6
+      "cold": 8.6,
+      "warm": 2.8
      }
     },
     "open": {
      "fskit": {
-      "cold": 44.6,
-      "warm": 12.4
+      "cold": 64.0,
+      "warm": 12.0
      },
      "copy": {
-      "cold": 11.4,
-      "warm": 11.2
+      "cold": 11.9,
+      "warm": 11.9
      },
      "symlink": {
-      "cold": 14.5,
-      "warm": 13.7
+      "cold": 14.4,
+      "warm": 14.7
      },
      "link": {
-      "cold": 22.0,
-      "warm": 21.8
+      "cold": 23.4,
+      "warm": 22.9
      },
      "clonefile": {
-      "cold": 20.4,
-      "warm": 11.9
+      "cold": 21.0,
+      "warm": 12.4
      }
     },
     "read": {
      "fskit": {
-      "cold": 2057.7,
-      "warm": 258.8
+      "cold": 3239.0,
+      "warm": 264.7
      },
      "copy": {
-      "cold": 251.4,
-      "warm": 249.4
+      "cold": 259.0,
+      "warm": 255.8
      },
      "symlink": {
-      "cold": 249.6,
-      "warm": 248.1
+      "cold": 259.4,
+      "warm": 255.2
      },
      "link": {
-      "cold": 247.9,
-      "warm": 248.0
+      "cold": 257.0,
+      "warm": 256.3
      },
      "clonefile": {
-      "cold": 1287.8,
-      "warm": 250.7
+      "cold": 1326.5,
+      "warm": 260.7
      }
     },
     "fault": {
      "fskit": {
-      "cold": 181.0,
-      "warm": 118.4
+      "cold": 212.2,
+      "warm": 116.1
      },
      "copy": {
-      "cold": 116.8,
-      "warm": 114.9
+      "cold": 122.0,
+      "warm": 115.8
      },
      "symlink": {
-      "cold": 115.4,
-      "warm": 115.3
+      "cold": 115.9,
+      "warm": 116.8
      },
      "link": {
-      "cold": 117.6,
-      "warm": 115.3
+      "cold": 119.8,
+      "warm": 115.9
      },
      "clonefile": {
-      "cold": 121.6,
-      "warm": 114.9
+      "cold": 121.7,
+      "warm": 115.8
      }
     }
    },
    "e2e_ms": {
     "work_total": {
      "fskit": {
-      "cold": 379.9,
-      "warm": 50.9
+      "cold": 617.4,
+      "warm": 46.8
      },
      "copy": {
-      "cold": 25.2,
-      "warm": 25.0
+      "cold": 31.8,
+      "warm": 32.3
      },
      "symlink": {
-      "cold": 26.4,
-      "warm": 25.7
+      "cold": 34.0,
+      "warm": 32.9
      },
      "link": {
-      "cold": 26.9,
-      "warm": 26.6
+      "cold": 33.6,
+      "warm": 34.0
      },
      "clonefile": {
-      "cold": 125.4,
-      "warm": 25.2
+      "cold": 148.8,
+      "warm": 32.9
      }
     },
     "find": {
      "fskit": {
-      "cold": 28.7,
-      "warm": 4.5
+      "cold": 29.8,
+      "warm": 4.4
      },
      "copy": {
-      "cold": 4.8,
-      "warm": 4.5
+      "cold": 4.9,
+      "warm": 4.6
      },
      "symlink": {
-      "cold": 5.1,
-      "warm": 5.1
+      "cold": 5.4,
+      "warm": 5.0
      },
      "link": {
-      "cold": 4.4,
-      "warm": 4.3
+      "cold": 4.9,
+      "warm": 4.7
      },
      "clonefile": {
-      "cold": 4.6,
-      "warm": 4.5
+      "cold": 4.7,
+      "warm": 4.7
      }
     },
     "grep": {
      "fskit": {
-      "cold": 19.2,
-      "warm": 6.4
+      "cold": 21.5,
+      "warm": 6.2
      },
      "copy": {
-      "cold": 6.5,
-      "warm": 7.1
+      "cold": 6.7,
+      "warm": 6.7
      },
      "symlink": {
-      "cold": 7.7,
-      "warm": 7.4
+      "cold": 7.9,
+      "warm": 7.7
      },
      "link": {
-      "cold": 8.1,
-      "warm": 7.8
+      "cold": 8.8,
+      "warm": 8.6
      },
      "clonefile": {
-      "cold": 6.7,
-      "warm": 6.6
+      "cold": 6.6,
+      "warm": 7.3
      }
     }
    }
   },
   "nodemod": {
-   "files": 2565.0,
+   "files": 2565,
    "laydown_ms": {
     "fskit": {
-     "cold": 22.43,
-     "warm": 13.391
+     "cold": 19.779,
+     "warm": 15.705
     },
     "copy": {
-     "cold": 290.767,
-     "warm": 290.767
+     "cold": 294.589,
+     "warm": 294.589
     },
     "symlink": {
-     "cold": 164.978,
-     "warm": 164.978
+     "cold": 167.453,
+     "warm": 167.453
     },
     "link": {
-     "cold": 764.879,
-     "warm": 764.879
+     "cold": 790.253,
+     "warm": 790.253
     },
     "clonefile": {
-     "cold": 25.05,
-     "warm": 25.05
+     "cold": 26.713,
+     "warm": 26.713
     }
    },
    "exec_ms": {
     "fskit": {
-     "cold": 180.93,
-     "warm": 2.95
+     "cold": 107.56,
+     "warm": 3.06
     },
     "copy": {
-     "cold": 143.01,
-     "warm": 2.55
+     "cold": 116.7,
+     "warm": 3.63
     },
     "symlink": {
-     "cold": 113.84,
-     "warm": 2.25
+     "cold": 3.48,
+     "warm": 3.04
     },
     "link": {
-     "cold": 109.45,
-     "warm": 2.34
+     "cold": 70.87,
+     "warm": 3.34
     },
     "clonefile": {
-     "cold": 113.41,
-     "warm": 2.42
+     "cold": 112.68,
+     "warm": 3.29
     }
    },
    "ops_us": {
     "readdir": {
      "fskit": {
-      "cold": 107.6,
-      "warm": 101.8
+      "cold": 102.0,
+      "warm": 99.6
      },
      "copy": {
       "cold": 3.9,
-      "warm": 3.9
+      "warm": 4.0
      },
      "symlink": {
-      "cold": 3.9,
-      "warm": 3.9
+      "cold": 4.0,
+      "warm": 4.0
      },
      "link": {
-      "cold": 4.2,
-      "warm": 4.2
+      "cold": 4.3,
+      "warm": 4.3
      },
      "clonefile": {
       "cold": 4.1,
-      "warm": 3.9
+      "warm": 4.0
      }
     },
     "getattrlistbulk": {
      "fskit": {
-      "cold": 110.4,
-      "warm": 93.3
+      "cold": 110.7,
+      "warm": 99.0
      },
      "copy": {
-      "cold": 7.1,
-      "warm": 6.5
+      "cold": 6.8,
+      "warm": 7.1
      },
      "symlink": {
       "cold": 8.5,
-      "warm": 6.7
+      "warm": 6.8
      },
      "link": {
-      "cold": 9.0,
-      "warm": 7.5
+      "cold": 8.9,
+      "warm": 8.8
      },
      "clonefile": {
-      "cold": 11.2,
-      "warm": 6.3
+      "cold": 9.9,
+      "warm": 6.8
      }
     },
     "stat": {
      "fskit": {
-      "cold": 107.6,
+      "cold": 132.2,
       "warm": 2.0
      },
      "copy": {
@@ -624,12 +624,12 @@
       "warm": 1.7
      },
      "symlink": {
-      "cold": 5.4,
-      "warm": 4.7
+      "cold": 5.5,
+      "warm": 5.0
      },
      "link": {
-      "cold": 3.6,
-      "warm": 3.3
+      "cold": 3.5,
+      "warm": 3.4
      },
      "clonefile": {
       "cold": 5.8,
@@ -638,52 +638,52 @@
     },
     "open": {
      "fskit": {
-      "cold": 25.2,
-      "warm": 12.4
+      "cold": 25.0,
+      "warm": 12.8
      },
      "copy": {
-      "cold": 12.3,
-      "warm": 12.1
+      "cold": 12.5,
+      "warm": 12.4
      },
      "symlink": {
-      "cold": 15.7,
-      "warm": 15.4
+      "cold": 15.8,
+      "warm": 15.5
      },
      "link": {
-      "cold": 23.5,
-      "warm": 23.4
+      "cold": 23.7,
+      "warm": 23.5
      },
      "clonefile": {
       "cold": 20.3,
-      "warm": 12.6
+      "warm": 12.9
      }
     },
     "read": {
      "fskit": {
-      "cold": 153.9,
-      "warm": 1.3
+      "cold": 142.9,
+      "warm": 1.4
      },
      "copy": {
       "cold": 1.2,
       "warm": 1.2
      },
      "symlink": {
-      "cold": 1.2,
-      "warm": 1.2
+      "cold": 1.3,
+      "warm": 1.3
      },
      "link": {
       "cold": 1.3,
-      "warm": 1.2
+      "warm": 1.3
      },
      "clonefile": {
-      "cold": 16.8,
-      "warm": 1.2
+      "cold": 19.5,
+      "warm": 1.3
      }
     },
     "fault": {
      "fskit": {
       "cold": 1.0,
-      "warm": 0.7
+      "warm": 0.8
      },
      "copy": {
       "cold": 0.8,
@@ -706,226 +706,226 @@
    "e2e_ms": {
     "work_total": {
      "fskit": {
-      "cold": 1063.7,
-      "warm": 195.0
+      "cold": 1126.7,
+      "warm": 217.8
      },
      "copy": {
-      "cold": 54.3,
-      "warm": 52.4
+      "cold": 62.6,
+      "warm": 61.4
      },
      "symlink": {
-      "cold": 75.2,
-      "warm": 70.0
+      "cold": 86.8,
+      "warm": 79.7
      },
      "link": {
-      "cold": 87.9,
-      "warm": 84.5
+      "cold": 96.8,
+      "warm": 96.3
      },
      "clonefile": {
-      "cold": 214.1,
-      "warm": 54.9
+      "cold": 166.7,
+      "warm": 64.5
      }
     },
     "find": {
      "fskit": {
-      "cold": 105.9,
-      "warm": 79.0
+      "cold": 103.3,
+      "warm": 81.1
      },
      "copy": {
-      "cold": 21.5,
-      "warm": 21.2
+      "cold": 23.4,
+      "warm": 23.3
      },
      "symlink": {
-      "cold": 32.5,
-      "warm": 30.9
+      "cold": 34.9,
+      "warm": 33.9
      },
      "link": {
-      "cold": 20.7,
-      "warm": 20.4
+      "cold": 23.1,
+      "warm": 23.5
      },
      "clonefile": {
-      "cold": 21.4,
-      "warm": 20.9
+      "cold": 22.7,
+      "warm": 22.9
      }
     },
     "grep": {
      "fskit": {
-      "cold": 129.9,
-      "warm": 129.7
+      "cold": 135.6,
+      "warm": 145.2
      },
      "copy": {
-      "cold": 69.0,
-      "warm": 68.8
+      "cold": 72.1,
+      "warm": 76.7
      },
      "symlink": {
-      "cold": 95.9,
-      "warm": 95.8
+      "cold": 99.3,
+      "warm": 100.0
      },
      "link": {
-      "cold": 102.5,
-      "warm": 99.2
+      "cold": 107.0,
+      "warm": 107.4
      },
      "clonefile": {
-      "cold": 71.6,
-      "warm": 72.2
+      "cold": 77.3,
+      "warm": 76.6
      }
     }
    }
   },
   "treeheavy": {
-   "files": 5466.0,
+   "files": 5466,
    "laydown_ms": {
     "fskit": {
-     "cold": 51.111,
-     "warm": 89.524
+     "cold": 47.58,
+     "warm": 88.227
     },
     "copy": {
-     "cold": 828.597,
-     "warm": 828.597
+     "cold": 863.175,
+     "warm": 863.175
     },
     "symlink": {
-     "cold": 564.315,
-     "warm": 564.315
+     "cold": 568.144,
+     "warm": 568.144
     },
     "link": {
-     "cold": 1827.768,
-     "warm": 1827.768
+     "cold": 1968.353,
+     "warm": 1968.353
     },
     "clonefile": {
-     "cold": 108.245,
-     "warm": 108.245
+     "cold": 105.968,
+     "warm": 105.968
     }
    },
    "exec_ms": {
     "fskit": {
-     "cold": 106.53,
-     "warm": 2.23
+     "cold": 157.71,
+     "warm": 3.36
     },
     "copy": {
-     "cold": 114.73,
-     "warm": 2.83
+     "cold": 114.07,
+     "warm": 3.56
     },
     "symlink": {
-     "cold": 107.26,
-     "warm": 2.46
+     "cold": 3.74,
+     "warm": 3.65
     },
     "link": {
-     "cold": 107.75,
-     "warm": 2.56
+     "cold": 74.82,
+     "warm": 3.3
     },
     "clonefile": {
-     "cold": 122.08,
-     "warm": 2.65
+     "cold": 112.95,
+     "warm": 3.39
     }
    },
    "ops_us": {
     "readdir": {
      "fskit": {
-      "cold": 105.0,
-      "warm": 105.7
+      "cold": 97.1,
+      "warm": 97.3
      },
      "copy": {
-      "cold": 2.9,
-      "warm": 2.9
+      "cold": 3.0,
+      "warm": 3.0
      },
      "symlink": {
-      "cold": 2.9,
+      "cold": 3.0,
       "warm": 3.0
      },
      "link": {
-      "cold": 3.0,
-      "warm": 3.0
+      "cold": 3.1,
+      "warm": 3.1
      },
      "clonefile": {
-      "cold": 3.0,
-      "warm": 2.9
+      "cold": 3.1,
+      "warm": 3.0
      }
     },
     "getattrlistbulk": {
      "fskit": {
-      "cold": 104.7,
-      "warm": 106.9
+      "cold": 102.2,
+      "warm": 99.0
      },
      "copy": {
-      "cold": 4.8,
+      "cold": 5.1,
       "warm": 4.4
      },
      "symlink": {
-      "cold": 5.1,
-      "warm": 4.2
+      "cold": 5.2,
+      "warm": 4.1
      },
      "link": {
-      "cold": 4.9,
-      "warm": 4.9
+      "cold": 4.8,
+      "warm": 4.8
      },
      "clonefile": {
-      "cold": 6.0,
-      "warm": 4.2
+      "cold": 5.9,
+      "warm": 4.1
      }
     },
     "stat": {
      "fskit": {
-      "cold": 107.2,
-      "warm": 2.6
+      "cold": 126.2,
+      "warm": 2.4
      },
      "copy": {
-      "cold": 1.6,
-      "warm": 1.6
+      "cold": 1.7,
+      "warm": 1.5
      },
      "symlink": {
-      "cold": 4.9,
-      "warm": 4.4
+      "cold": 4.8,
+      "warm": 4.2
      },
      "link": {
       "cold": 2.8,
-      "warm": 2.8
+      "warm": 2.7
      },
      "clonefile": {
-      "cold": 5.1,
+      "cold": 5.0,
       "warm": 2.0
      }
     },
     "open": {
      "fskit": {
-      "cold": 23.7,
-      "warm": 19.3
+      "cold": 23.8,
+      "warm": 19.6
      },
      "copy": {
-      "cold": 13.9,
-      "warm": 11.3
+      "cold": 12.8,
+      "warm": 11.4
      },
      "symlink": {
       "cold": 20.8,
       "warm": 14.2
      },
      "link": {
-      "cold": 21.8,
-      "warm": 21.8
+      "cold": 22.0,
+      "warm": 22.0
      },
      "clonefile": {
-      "cold": 18.8,
-      "warm": 11.7
+      "cold": 18.9,
+      "warm": 11.9
      }
     },
     "read": {
      "fskit": {
-      "cold": 150.7,
+      "cold": 144.2,
       "warm": 1.4
      },
      "copy": {
-      "cold": 1.3,
-      "warm": 1.2
+      "cold": 1.4,
+      "warm": 1.3
      },
      "symlink": {
-      "cold": 1.2,
-      "warm": 1.3
+      "cold": 1.3,
+      "warm": 1.4
      },
      "link": {
       "cold": 1.3,
       "warm": 1.3
      },
      "clonefile": {
-      "cold": 19.0,
+      "cold": 19.8,
       "warm": 1.3
      }
     },
@@ -955,68 +955,68 @@
    "e2e_ms": {
     "work_total": {
      "fskit": {
-      "cold": 3395.2,
-      "warm": 1284.3
+      "cold": 3610.2,
+      "warm": 1223.4
      },
      "copy": {
-      "cold": 158.3,
-      "warm": 151.6
+      "cold": 183.6,
+      "warm": 161.6
      },
      "symlink": {
-      "cold": 211.9,
-      "warm": 187.2
+      "cold": 223.6,
+      "warm": 198.7
      },
      "link": {
-      "cold": 211.5,
-      "warm": 212.8
+      "cold": 221.0,
+      "warm": 222.5
      },
      "clonefile": {
-      "cold": 476.5,
-      "warm": 153.4
+      "cold": 511.3,
+      "warm": 167.3
      }
     },
     "find": {
      "fskit": {
-      "cold": 618.9,
-      "warm": 668.1
+      "cold": 643.4,
+      "warm": 600.5
      },
      "copy": {
-      "cold": 113.4,
-      "warm": 114.1
+      "cold": 117.1,
+      "warm": 115.0
      },
      "symlink": {
-      "cold": 140.4,
-      "warm": 142.3
+      "cold": 144.8,
+      "warm": 148.4
      },
      "link": {
-      "cold": 118.1,
-      "warm": 112.5
+      "cold": 135.1,
+      "warm": 119.9
      },
      "clonefile": {
-      "cold": 123.9,
-      "warm": 115.2
+      "cold": 115.2,
+      "warm": 118.7
      }
     },
     "grep": {
      "fskit": {
-      "cold": 709.3,
-      "warm": 806.0
+      "cold": 767.2,
+      "warm": 771.5
      },
      "copy": {
-      "cold": 251.4,
-      "warm": 219.6
+      "cold": 234.4,
+      "warm": 232.1
      },
      "symlink": {
-      "cold": 279.2,
-      "warm": 282.8
+      "cold": 287.7,
+      "warm": 298.7
      },
      "link": {
-      "cold": 309.7,
-      "warm": 291.6
+      "cold": 294.8,
+      "warm": 294.3
      },
      "clonefile": {
-      "cold": 235.0,
-      "warm": 230.5
+      "cold": 244.0,
+      "warm": 246.0
      }
     }
    }

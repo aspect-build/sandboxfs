@@ -64,16 +64,24 @@ def timed(cmd):
 NONCE = int(time.time())     # per-run salt so each run's exec binaries are cdhash-fresh
 
 
+TOOL_PAYLOAD_MB = 16
+
 def build_tool(path, tag):
-    """A trivial locally-built (ad-hoc signed) exe with a UNIQUE embedded constant, so each
-    (payload, backend) binary has its own cdhash. AMFI validates a cdhash once and caches it
-    kernel-wide; a unique+fresh cdhash makes every first launch a true cold validation."""
+    """A locally-built (ad-hoc signed) exe with a UNIQUE embedded constant, so each (payload,
+    backend) binary has its own cdhash, and a 16MB signed payload it touches page by page at
+    startup, the way a real tool pages its code in. It is executed once here on the host, so the
+    cdhash is assessed and the host inode's pages validated before any backend lays it down: a
+    backend that shares that inode (link, symlink) inherits the validation, one that mints a new
+    inode (copy, clonefile, fskit) pays AMFI again for every page."""
     try:
         os.remove(path)
     except FileNotFoundError:
         pass
-    src = f"int _u={tag};int main(){{return _u*0;}}".encode()
+    src = (f"static const unsigned char blob[{TOOL_PAYLOAD_MB} << 20] = {{1}}; int _u = {tag};"
+           "int main(void) { volatile unsigned s = 0; for (unsigned long i = 0; i < sizeof blob; i += 4096) s += blob[i];"
+           "return (s + _u) * 0; }").encode()
     run(["cc", "-O2", "-x", "c", "-o", path, "-"], input=src)
+    run([path])
 
 
 def tool_name(impl):
@@ -97,7 +105,7 @@ def measure_io(root):
 
 
 def measure_exec(root, impl):
-    """Exec the backend's own binary 30×: first launch = cold code-sign validation, p50 = warm."""
+    """Exec the backend's own binary 30×: first launch = validating this backend's inode, p50 = warm."""
     tool = os.path.join(root, tool_name(impl))
     r = json.loads(run([BIN, "exec", tool, "30"], capture_output=True, text=True).stdout)
     if r["failed"]:

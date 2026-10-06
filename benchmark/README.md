@@ -3,7 +3,9 @@
 Per-syscall cost of five ways to stage a Bazel action's inputs on macOS: a userspace **fskit**
 volume, a per-file byte **copy()**, a per-file **symlink()** farm, a per-file **link()** farm, and
 one APFS **clonefile()** of the tree. The same generated trees, laid down each way, read back by
-one C harness (readdir, getattrlistbulk, stat, open, read, mmap fault, execve), cold and warm.
+one C harness (readdir, getattrlistbulk, stat, open, read, mmap fault, execve), cold and warm. The
+exec'd tool is a 16MB binary that has already run once on the host, so its cold column is what a
+backend adds on top: nothing for a shared inode, a fresh AMFI validation for a new one.
 
 ```
 python3 benchmark/bench.py                 # one sample → results.json, numbers.json, index.html
