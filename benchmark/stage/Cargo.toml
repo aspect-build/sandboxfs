@@ -1,0 +1,9 @@
+[package]
+name = "bench-stage"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+
+[dependencies]
+backend = { path = "../../crates/backend" }
+backend-fskit = { path = "../../crates/backend-fskit" }

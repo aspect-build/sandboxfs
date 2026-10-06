@@ -41,10 +41,10 @@ ROOT="$(cd "$HERE/.." && pwd)"
 cd "$ROOT"
 
 # xcodebuild lives inside a full Xcode, not the CommandLineTools. Honor an explicit
-# DEVELOPER_DIR, else pick a full Xcode (beta first) so the build works regardless of
-# what `xcode-select` points at.
+# DEVELOPER_DIR, else pick a full Xcode (Xcode.app, then any other Xcode*.app) so the build
+# works regardless of what `xcode-select` points at.
 if [ -z "${DEVELOPER_DIR:-}" ]; then
-    for x in /Applications/Xcode-beta.app /Applications/Xcode.app; do
+    for x in /Applications/Xcode.app /Applications/Xcode*.app; do
         [ -d "$x" ] && { export DEVELOPER_DIR="$x/Contents/Developer"; break; }
     done
 fi

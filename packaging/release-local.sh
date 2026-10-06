@@ -9,7 +9,7 @@
 #   ./packaging/release-local.sh            # (re)cut the v0.0.0 prerelease from HEAD
 #   ./packaging/release-local.sh v0.1.0     # versioned release (creates the tag)
 #
-# Needs: Xcode-beta (27), the Developer ID identities in your keychain, the
+# Needs: Xcode 27 or newer, the Developer ID identities in your keychain, the
 # `sandboxfs-notary` notarytool profile, and `gh` authenticated.
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

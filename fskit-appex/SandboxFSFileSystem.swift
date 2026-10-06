@@ -60,6 +60,6 @@ class SandboxFSFileSystem: FSUnaryFileSystem & FSUnaryFileSystemOperations & FSM
             replyHandler(nil, fs_errorForPOSIXError(POSIXError.ENOTSUP.rawValue))
             return
         }
-        replyHandler(VolumeMmap(resource: pathResource), nil)
+        replyHandler(VolumeServed(resource: pathResource), nil)
     }
 }

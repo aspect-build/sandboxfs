@@ -54,11 +54,12 @@ runners cannot cut releases yet.
 than repoint it globally, set `DEVELOPER_DIR` for the invocation:
 
 ```
-DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer xcodebuild -scheme sandbox -configuration Release
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcodebuild -scheme sandbox -configuration Release
 ```
 
 `packaging/package.sh` does this for you: with no explicit `DEVELOPER_DIR` it picks
-`Xcode-beta.app` first, then `Xcode.app`, so it works regardless of what `xcode-select` says.
+`Xcode.app`, then any other `Xcode*.app`, so it works regardless of what `xcode-select` says.
+The appex targets macOS 27 FSKit APIs, so Xcode 27 or newer is required.
 
 ## Registering the appex
 

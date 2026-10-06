@@ -1,0 +1,161 @@
+<title>Sandbox Syscall Scope</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a datasheet of small multiples, one panel per kernel API; each panel is five dumbbell
+   rows (one per backend, fixed order) on a shared log axis; values in tabular columns at right. */
+:root{
+  --bg:#f7f7f4; --surface:#fcfcfb; --ink:#141412; --ink-2:#52514e; --ink-3:#8a897f;
+  --rule:#e3e2db; --grid:#ecebe5;
+  --series:#2a78d6; --series-soft:#c9dcf4; --hi:#eb6834;
+  --sans:"IBM Plex Sans",-apple-system,system-ui,sans-serif; --mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
+  --bg:#151514; --surface:#1a1a19; --ink:#f2f1ea; --ink-2:#c3c2b7; --ink-3:#85847a;
+  --rule:#2d2d2a; --grid:#242422; --series:#3987e5; --series-soft:#223a5c; --hi:#d95926; color-scheme:dark } }
+:root[data-theme="dark"]{
+  --bg:#151514; --surface:#1a1a19; --ink:#f2f1ea; --ink-2:#c3c2b7; --ink-3:#85847a;
+  --rule:#2d2d2a; --grid:#242422; --series:#3987e5; --series-soft:#223a5c; --hi:#d95926; color-scheme:dark }
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.5 var(--sans);-webkit-font-smoothing:antialiased}
+.wrap{max-width:900px;margin:0 auto;padding-block:2.6rem 4rem;padding-inline:16px}
+.eyebrow{font:500 .7rem/1 var(--mono);letter-spacing:.18em;text-transform:uppercase;color:var(--ink-3);margin:0}
+h1{font-size:1.9rem;line-height:1.1;font-weight:600;letter-spacing:-.02em;margin:.55rem 0 0;text-wrap:balance}
+.lede{color:var(--ink-2);max-width:62ch;margin:.7rem 0 1.4rem;font-size:.95rem}
+.bar{display:flex;flex-wrap:wrap;gap:.6rem 1rem;align-items:center;padding:.7rem 0;border-top:1px solid var(--rule);border-bottom:1px solid var(--rule)}
+.tabs{display:flex;gap:.3rem;flex-wrap:wrap}
+.tab{font:500 .78rem var(--mono);color:var(--ink-2);background:none;border:1px solid var(--rule);border-radius:999px;padding:.3rem .7rem;cursor:pointer}
+.tab:hover{color:var(--ink)} .tab:focus-visible{outline:2px solid var(--series);outline-offset:2px}
+.tab[aria-pressed="true"]{color:var(--surface);background:var(--ink);border-color:var(--ink)}
+.tab small{color:inherit;opacity:.65;margin-left:.35rem}
+.key{margin-left:auto;display:flex;gap:1rem;font:.74rem var(--mono);color:var(--ink-2);align-items:center}
+.key svg{vertical-align:-3px;margin-right:.35rem}
+.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1.6rem 2.2rem;margin-top:1.6rem}
+@media (max-width:720px){.grid{grid-template-columns:1fr}}
+.panel{min-width:0}
+.ph{display:flex;align-items:baseline;justify-content:space-between;border-bottom:1px solid var(--ink);padding-bottom:.25rem;margin-bottom:.2rem}
+.ph h2{font-size:.95rem;font-weight:600;margin:0;font-family:var(--mono)}
+.ph span{font:.7rem var(--mono);color:var(--ink-3)}
+.panel svg{display:block;width:100%;height:auto;overflow:visible}
+.rowlabel{font:500 12px var(--sans);fill:var(--ink)}
+.val{font:11.5px var(--mono);font-variant-numeric:tabular-nums;fill:var(--ink)}
+.val.w{fill:var(--ink-3)} .val.x{fill:var(--hi)}
+.colhead{font:500 9.5px var(--mono);letter-spacing:.08em;fill:var(--ink-3)}
+.tick{font:10px var(--mono);fill:var(--ink-3)}
+.gridline{stroke:var(--grid);stroke-width:1} .baseline{stroke:var(--rule)}
+.hit{fill:transparent}
+.row.dim{opacity:.28}
+.row.hot .rowlabel{fill:var(--hi)}
+.row.hot .link{stroke:var(--hi)} .row.hot .warm{fill:var(--hi)} .row.hot .cold{stroke:var(--hi)}
+.link{stroke:var(--series);stroke-width:2;stroke-linecap:round}
+.warm{fill:var(--series);stroke:var(--surface);stroke-width:2}
+.cold{fill:var(--surface);stroke:var(--series);stroke-width:2}
+.note{margin-top:2rem;color:var(--ink-2);font-size:.86rem;max-width:72ch;line-height:1.65}
+.note b{color:var(--ink);font-weight:600}
+.note code{font:.86em var(--mono);background:var(--grid);padding:.05rem .3rem;border-radius:3px}
+.tbl{margin-top:1.8rem} details summary{cursor:pointer;font:500 .8rem var(--mono);color:var(--ink-2)}
+table{border-collapse:collapse;width:100%;font:.78rem var(--mono);font-variant-numeric:tabular-nums;margin-top:.6rem}
+th,td{text-align:right;padding:.3rem .5rem;border-bottom:1px solid var(--grid)} th:first-child,td:first-child{text-align:left}
+th{color:var(--ink-3);font-weight:500}
+.tblwrap{overflow-x:auto}
+@media (prefers-reduced-motion:no-preference){.row{transition:opacity .12s}}
+</style>
+<div class="wrap">
+  <p class="eyebrow">macOS sandbox laydown · kernel API latency</p>
+  <h1>What each syscall costs under five sandbox backends</h1>
+  <p class="lede">The same input tree, staged five ways, read back by one C harness. Each row is a backend;
+    the hollow end is the first touch after laydown, the solid end is the warm steady state. Axes are
+    logarithmic and shared within a unit, so a panel-to-panel glance compares magnitudes too.</p>
+  <div class="bar">
+    <div class="tabs" id="tabs" role="group" aria-label="Payload"></div>
+    <div class="key">
+      <span><svg width="14" height="14"><circle cx="7" cy="7" r="5" class="cold"/></svg>cold</span>
+      <span><svg width="14" height="14"><circle cx="7" cy="7" r="5" class="warm"/></svg>warm</span>
+    </div>
+  </div>
+  <div class="grid" id="grid"></div>
+  <p class="note" id="note"></p>
+  <div class="tbl"><details><summary>Table view</summary><div class="tblwrap" id="table"></div></details></div>
+</div>
+<script>
+const DATA = __DATA__;
+const ORDER = ["fskit","copy","symlink","link","clonefile"];
+const PANELS = [
+  {key:"readdir",        label:"readdir(2)",        unit:"µs", get:(p,b)=>p.ops_us.readdir[b]},
+  {key:"getattrlistbulk",label:"getattrlistbulk(2)",unit:"µs", get:(p,b)=>p.ops_us.getattrlistbulk[b]},
+  {key:"stat",           label:"stat(2)",           unit:"µs", get:(p,b)=>p.ops_us.stat[b]},
+  {key:"open",           label:"open(2)",           unit:"µs", get:(p,b)=>p.ops_us.open[b]},
+  {key:"read",           label:"read(2)",           unit:"µs", get:(p,b)=>p.ops_us.read[b]},
+  {key:"fault",          label:"mmap page fault",   unit:"µs", get:(p,b)=>p.ops_us.fault[b]},
+  {key:"exec",           label:"execve(2)",         unit:"ms", get:(p,b)=>p.exec_ms[b]},
+  {key:"laydown",        label:"laydown",           unit:"ms", get:(p,b)=>p.laydown_ms[b]},
+];
+const W=420, LEFT=78, RIGHT=150, ROW=24, TOP=16, BOTTOM=22;
+const fmt=v=> v>=1000 ? (v/1000).toFixed(1)+"k" : v>=100 ? v.toFixed(0) : v>=10 ? v.toFixed(1) : v.toFixed(2);
+const tick=v=> v>=1000 ? (v/1000)+"k" : String(v);
+let payload = Object.keys(DATA.payloads)[0];
+
+function domain(unit){
+  const vs=[];
+  for (const p of Object.values(DATA.payloads)) for (const P of PANELS) if (P.unit===unit)
+    for (const b of ORDER){ const d=P.get(p,b); if (d) vs.push(d.cold,d.warm); }
+  const lo=Math.pow(10,Math.floor(Math.log10(Math.min(...vs)))), hi=Math.pow(10,Math.ceil(Math.log10(Math.max(...vs))));
+  return [lo, hi===lo?hi*10:hi];
+}
+const DOM={ "µs":domain("µs"), "ms":domain("ms") };
+
+function panel(P){
+  const p=DATA.payloads[payload], [lo,hi]=DOM[P.unit], plotW=W-LEFT-RIGHT;
+  const x=v=>LEFT+(Math.log10(Math.min(Math.max(v,lo),hi))-Math.log10(lo))/(Math.log10(hi)-Math.log10(lo))*plotW;
+  const H=TOP+ROW*ORDER.length+BOTTOM;
+  let s=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${P.label} latency per backend">`;
+  s+=`<text class="colhead" x="${W-RIGHT+44}" y="${TOP-6}" text-anchor="end">COLD</text>`;
+  s+=`<text class="colhead" x="${W-RIGHT+90}" y="${TOP-6}" text-anchor="end">WARM</text>`;
+  s+=`<text class="colhead" x="${W-RIGHT+136}" y="${TOP-6}" text-anchor="end">÷</text>`;
+  for (let e=Math.round(Math.log10(lo)); e<=Math.round(Math.log10(hi)); e++){
+    const v=Math.pow(10,e), gx=x(v);
+    s+=`<line class="gridline" x1="${gx}" x2="${gx}" y1="${TOP}" y2="${H-BOTTOM+4}"/>`;
+    s+=`<text class="tick" x="${gx}" y="${H-4}" text-anchor="middle">${tick(v)}</text>`;
+  }
+  ORDER.forEach((b,i)=>{
+    const d=P.get(p,b), cy=TOP+ROW*i+ROW/2;
+    s+=`<g class="row" data-b="${b}">`;
+    s+=`<rect class="hit" x="0" y="${TOP+ROW*i}" width="${W}" height="${ROW}"/>`;
+    s+=`<text class="rowlabel" x="${LEFT-10}" y="${cy+4}" text-anchor="end">${DATA.labels[b]}</text>`;
+    if (d){
+      const xc=x(d.cold), xw=x(d.warm), r=d.cold/d.warm;
+      s+=`<line class="link" x1="${xc}" x2="${xw}" y1="${cy}" y2="${cy}"/>`;
+      s+=`<circle class="cold" cx="${xc}" cy="${cy}" r="5"/>`;
+      s+=`<circle class="warm" cx="${xw}" cy="${cy}" r="5"/>`;
+      s+=`<text class="val" x="${W-RIGHT+44}" y="${cy+4}" text-anchor="end">${fmt(d.cold)}</text>`;
+      s+=`<text class="val w" x="${W-RIGHT+90}" y="${cy+4}" text-anchor="end">${fmt(d.warm)}</text>`;
+      s+=`<text class="val x" x="${W-RIGHT+136}" y="${cy+4}" text-anchor="end">${r>=1.15||r<=0.87 ? (r>=10?r.toFixed(0):r.toFixed(1))+"×" : ""}</text>`;
+    } else {
+      s+=`<text class="val w" x="${W-RIGHT+44}" y="${cy+4}" text-anchor="end">—</text>`;
+    }
+    s+=`</g>`;
+  });
+  return `<section class="panel"><div class="ph"><h2>${P.label}</h2><span>${P.unit} · log · p50</span></div>${s}</svg></section>`;
+}
+
+function render(){
+  const p=DATA.payloads[payload];
+  document.getElementById("grid").innerHTML=PANELS.map(panel).join("");
+  document.getElementById("tabs").innerHTML=Object.entries(DATA.payloads).map(([k,v])=>
+    `<button class="tab" type="button" id="tab-${k}" aria-pressed="${k===payload}" data-k="${k}">${k}<small>${v.files.toLocaleString()} files</small></button>`).join("");
+  const m=DATA.machine;
+  document.getElementById("note").innerHTML=
+    `<b>Reading it.</b> readdir, getattrlistbulk, stat, open, read and page-fault latencies are per-call p50 over the whole
+     tree, each value the median of ${DATA.runs} full runs; execve is fork+exec+wait of a freshly built binary, cold meaning a never-validated code signature; laydown is
+     the time to stage the whole tree. Cold here is <b>${DATA.cold}</b>. Where the solid end sits left of the hollow one,
+     warm is faster; in the fskit readdir and getattrlistbulk rows the warm pass is slower than the first touch.
+     fskit's mount costs ${DATA.fskit_mount_ms} ms once per workspace. ${m.cpu}, ${m.memory_gb} GB, macOS ${m.macos}, ${DATA.generated.slice(0,10)}.`;
+  const rows=PANELS.map(P=>`<tr><td>${P.label} (${P.unit})</td>${ORDER.map(b=>{const d=P.get(p,b);return `<td>${d?fmt(d.cold)+" / "+fmt(d.warm):"—"}</td>`}).join("")}</tr>`).join("");
+  document.getElementById("table").innerHTML=`<table><thead><tr><th>cold / warm</th>${ORDER.map(b=>`<th>${DATA.labels[b]}</th>`).join("")}</tr></thead><tbody>${rows}</tbody></table>`;
+}
+document.getElementById("tabs").addEventListener("click",e=>{const t=e.target.closest(".tab"); if(!t) return; payload=t.dataset.k; render();});
+const grid=document.getElementById("grid");
+grid.addEventListener("mouseover",e=>{const g=e.target.closest(".row"); if(!g) return;
+  grid.querySelectorAll(".row").forEach(r=>{r.classList.toggle("hot",r.dataset.b===g.dataset.b); r.classList.toggle("dim",r.dataset.b!==g.dataset.b);});});
+grid.addEventListener("mouseleave",()=>grid.querySelectorAll(".row").forEach(r=>r.classList.remove("hot","dim")));
+render();
+</script>

@@ -7,3 +7,4 @@ target
 __pycache__
 .work
 .cargo
+/benchmark/bench

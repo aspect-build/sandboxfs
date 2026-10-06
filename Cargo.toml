@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/*"]
+members = ["crates/*", "benchmark/stage"]
 # backend-cfs is a dependency but not a member, so a `paths` override (see DEVELOPING.md in the
 # cfs repo) can swap the stand-in for a real checkout without two packages of that name colliding
 # in one workspace.
