@@ -20,7 +20,7 @@ common --enable_platform_specific_config
 common:macos --sandbox_backend=aspect-sandbox=sandboxfs
 common:macos --spawn_strategy=aspect-sandbox,local
 # Enable metrics if you'd like to
-# common:macos --sandbox_backend_opt=sandboxfs=--metrics
+# common:macos --sandbox_backend_opt=sandboxfs=metrics
 ```
 
 `metricsd` is installed and running; uncomment the last line to record build metrics and view them in **sandbox.app**.

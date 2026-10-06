@@ -282,7 +282,7 @@ jobs:
           <pre><code>common --enable_platform_specific_config
           common:macos --sandbox_backend=aspect-sandbox=sandboxfs
           common:macos --spawn_strategy=aspect-sandbox,local
-          # common:macos --sandbox_backend_opt=sandboxfs=--metrics</code></pre>
+          # common:macos --sandbox_backend_opt=sandboxfs=metrics</code></pre>
           </div>
           <p class="note">Uncomment the last line to record build metrics for sandbox.app.</p>
           </section>

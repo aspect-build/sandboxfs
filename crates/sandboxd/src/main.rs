@@ -170,7 +170,16 @@ fn serve(workspace: &str, backend_name: Option<&str>) {
             // The one-time handshake, sent before any sandbox is created: answer inline rather
             // than through the worker queue/timing stats, which model only Create/Collect/Destroy.
             Some(Request::Negotiate { rid, versions, options }) => {
-                let options = Options::parse(&options);
+                let options = match Options::parse(&options) {
+                    Ok(o) => o,
+                    Err(e) => {
+                        let frame = frame(&proto::encode_response(&negotiate_error(rid, &e)));
+                        let mut o = out.lock().unwrap();
+                        let _ = o.write_all(&frame).and_then(|_| o.flush());
+                        eprintln!("sandboxfs: {e}");
+                        std::process::exit(1);
+                    }
+                };
                 let backend = match select(backend_name, workspace, &options) {
                     Ok(b) => b,
                     Err(e) => {
@@ -210,7 +219,10 @@ fn serve(workspace: &str, backend_name: Option<&str>) {
                 latch_exec_root(&store, &req);
                 queue.push(req)
             }
-            None => {}
+            None => {
+                eprintln!("sandboxfs: undecodable {len}-byte request frame; Bazel and this controller disagree on the sandbox protocol");
+                std::process::exit(1);
+            }
         }
     }
     queue.close();
@@ -223,7 +235,7 @@ fn serve(workspace: &str, backend_name: Option<&str>) {
 /// Opt-in metrics, keyed by workspace. Bazel sends no build boundaries and keeps this controller
 /// alive across builds, so a build is inferred from live-sandbox edges: running while `stats::LIVE`
 /// is above zero, done once it has sat at zero for the idle grace. The controller drives begin/end
-/// itself so the daemon learns its pid. Armed by `sandboxfs_metrics=1` or a `--metrics` backend
+/// itself so the daemon learns its pid. Armed by `sandboxfs_metrics=1` or a `metrics` backend
 /// arg.
 struct MetricsGate {
     stop: Option<Arc<std::sync::atomic::AtomicBool>>,
@@ -376,9 +388,13 @@ fn handle(backend: &dyn Backend, req: Request, store: &Arc<BlobStore>) -> Respon
 /// Bazel's offered set excludes it.
 fn negotiate(rid: u64, versions: &[u32]) -> Response {
     if !versions.contains(&proto::VERSION_1) {
-        return Response { rid, reply: Reply::Negotiate(NegotiateReply::Error("sandboxfs: no shared protocol version".into())) };
+        return negotiate_error(rid, "no shared protocol version");
     }
     Response { rid, reply: Reply::Negotiate(NegotiateReply::Ok { version: proto::VERSION_1 }) }
+}
+
+fn negotiate_error(rid: u64, message: &str) -> Response {
+    Response { rid, reply: Reply::Negotiate(NegotiateReply::Error(format!("sandboxfs: {message}"))) }
 }
 
 /// A minimal MPMC work queue (std-only): workers block on `pop` until an item
@@ -541,8 +557,8 @@ mod tests {
     }
 
     #[test]
-    fn metrics_gate_armed_by_metrics_backend_arg() {
-        // The --sandbox_backend_arg=<name>=--metrics path: relayed via Negotiate.options, no env var.
+    fn metrics_gate_armed_by_metrics_backend_opt() {
+        // The --sandbox_backend_opt=<name>=metrics path: relayed via Negotiate.options, no env var.
         std::env::remove_var("sandboxfs_metrics");
         let gate = MetricsGate::start("ws", Arc::new(StubBackend), &Options { metrics: true, ..Options::default() });
         assert!(gate.stop.is_some());

@@ -205,8 +205,8 @@ fn parse_content_source(b: &[u8]) -> Option<ContentSource> {
 }
 
 /// `Negotiate{ repeated string options = 1; repeated Version versions = 2; }`. One token per
-/// `--sandbox_backend_arg` occurrence lands in `options`, opaque to Bazel and ours to interpret
-/// (e.g. `--metrics`). `versions` is a proto3 enum, packed (wire type 2) by every standard
+/// `--sandbox_backend_opt` occurrence lands in `options`, opaque to Bazel and ours to interpret
+/// (e.g. `metrics`). `versions` is a proto3 enum, packed (wire type 2) by every standard
 /// encoder but accepted unpacked too, per proto3 wire compat.
 fn parse_negotiate(b: &[u8]) -> (Vec<String>, Vec<u32>) {
     let mut r = Reader::new(b);

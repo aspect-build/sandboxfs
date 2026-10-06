@@ -30,22 +30,27 @@ impl From<io::Error> for CreateError {
 }
 
 /// The backend args Bazel relays in the `Negotiate` handshake
-/// (`--sandbox_backend_arg=<name>=<opt>`), parsed once and handed to `Backend::start`.
-#[derive(Debug, Default)]
+/// (`--sandbox_backend_opt=<name>=<opt>`), parsed once and handed to `Backend::start`.
+#[derive(Debug, Default, PartialEq)]
 pub struct Options {
-    /// `--pool-root=<path>`: where to put the pool, for when the default is not on the workspace's
+    /// `pool_root=<path>`: where to put the pool, for when the default is not on the workspace's
     /// volume. Projection and `collect`'s rename are same-device-only.
     pub pool_root: Option<PathBuf>,
-    /// `--metrics`: arm kdebug attribution for this workspace.
+    /// `metrics`: arm kdebug attribution for this workspace.
     pub metrics: bool,
 }
 
 impl Options {
-    pub fn parse(args: &[String]) -> Options {
-        Options {
-            pool_root: args.iter().find_map(|a| a.strip_prefix("--pool-root=")).map(PathBuf::from),
-            metrics: args.iter().any(|a| a == "--metrics"),
+    pub fn parse(args: &[String]) -> Result<Options, String> {
+        let mut options = Options::default();
+        for arg in args {
+            match arg.split_once('=').unwrap_or((arg, "")) {
+                ("pool_root", path) if !path.is_empty() => options.pool_root = Some(PathBuf::from(path)),
+                ("metrics", "") => options.metrics = true,
+                _ => return Err(format!("unknown sandbox option {arg:?} (expected: pool_root=<path>, metrics)")),
+            }
         }
+        Ok(options)
     }
 }
 
@@ -97,4 +102,27 @@ pub trait Backend: Send + Sync {
     /// blobs are the pre-staging window, purely advisory. Runs on the reader thread and blocks the
     /// next frame.
     fn push(&self, _store: &BlobStore, _digests: &[String]) {}
+}
+
+#[cfg(test)]
+mod options_tests {
+    use super::*;
+
+    fn parse(args: &[&str]) -> Result<Options, String> {
+        Options::parse(&args.iter().map(|s| s.to_string()).collect::<Vec<_>>())
+    }
+
+    #[test]
+    fn bare_names_parse() {
+        let o = parse(&["metrics", "pool_root=/tmp/pool"]).unwrap();
+        assert_eq!(o, Options { pool_root: Some(PathBuf::from("/tmp/pool")), metrics: true });
+    }
+
+    #[test]
+    fn unknown_and_malformed_options_fail() {
+        assert!(parse(&["--metrics"]).is_err());
+        assert!(parse(&["metrics=1"]).is_err());
+        assert!(parse(&["pool_root"]).is_err());
+        assert!(parse(&["bogus"]).is_err());
+    }
 }

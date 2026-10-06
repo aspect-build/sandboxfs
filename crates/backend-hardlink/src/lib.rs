@@ -38,7 +38,7 @@ fn workspace_key(workspace: &str) -> String {
     format!("{base}-{}", &sha256_hex(workspace.as_bytes())[..16])
 }
 
-/// The daemon's one call into this backend. `--pool-root=<path>` moves the whole tree, which has to
+/// The daemon's one call into this backend. `pool_root=<path>` moves the whole tree, which has to
 /// stay on the workspace's volume: `link` is same-device-only and `collect` renames out of a slot.
 pub fn open(workspace: &str, options: &Options) -> io::Result<Arc<dyn Backend>> {
     let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".into());

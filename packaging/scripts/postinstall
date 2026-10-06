@@ -47,7 +47,7 @@ fi
 
 # 3) Install and load the metricsd LaunchDaemon (runs `sandboxfs metricsd` as
 #    root; owns the kdebug facility, vends the build.aspect.sandbox.metricsd Mach
-#    service). Opt in per build with --sandbox_backend_opt=sandboxfs=--metrics.
+#    service). Opt in per build with --sandbox_backend_opt=sandboxfs=metrics.
 PLIST_SRC="$APP/Contents/Resources/build.aspect.sandbox.metricsd.plist"
 PLIST_DST="/Library/LaunchDaemons/build.aspect.sandbox.metricsd.plist"
 if [ -f "$PLIST_SRC" ]; then
